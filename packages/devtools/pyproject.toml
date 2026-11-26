@@ -5,6 +5,7 @@ description = "Repository-local agent harness tooling."
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "jsonschema>=4.24,<5",
+  "websockets==16.1",
 ]
 
 [project.scripts]

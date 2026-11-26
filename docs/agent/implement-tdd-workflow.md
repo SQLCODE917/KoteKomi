@@ -139,12 +139,15 @@ Each poll prints one JSON object.
 The alert `message` is fixed: `New review comment on your current PR: <comment URL>. Please check it.`
 The listener never includes the comment body or command text in the alert.
 
-The listener uses the local Cline Hub's declared v1 WebSocket protocol with the token from the enrolled discovery file.
+The listener uses the declared `websockets==16.1` synchronous client with the local Cline Hub's v1 loopback protocol and the token from the enrolled discovery file.
+It validates the negotiated `cline-hub-auth.<token>` subprotocol and fails closed when the selected subprotocol is missing or wrong.
 It verifies the exact session ID, checkout, current branch, and idle status before sending.
+Before transmission it records the ordered message-ID prefix count and digest, then persists send intent.
 It sends only the fixed alert plus the trusted comment link to that enrolled session.
-It records send intent before transmission, correlates `run.started` with the request and exact session, and requires exactly one matching transcript entry.
+After a request- and session-correlated `run.started`, it requires the prefix to be unchanged and exactly one new user message containing the exact fixed alert.
+A historical match, assistant echo, tool result, changed prefix, or duplicate new alert cannot establish delivery.
 A busy or unavailable target is queued and revalidated on a later poll.
-An unproven session binding is blocked, and an unconfirmed or ambiguous send becomes `unknown` without a blind retry.
+An unproven session binding or unverifiable history is blocked, and an unconfirmed or ambiguous send becomes `unknown` without a blind retry.
 Delivered, notified, blocked, unknown, and failed records are never replayed after restart.
 The token stays in the discovery file; it is never passed as an argument or printed.
 The listener does not spawn a task, press approvals, or change sandbox settings.

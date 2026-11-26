@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
-import base64
+import hashlib
 import json
 import os
 import re
 import shutil
-import socket
 import subprocess
 import time
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
+
+from websockets.exceptions import ConnectionClosed, WebSocketException
+from websockets.sync.client import connect
+from websockets.sync.connection import Connection
+from websockets.typing import Subprotocol
 
 type JsonObject = dict[str, object]
 
@@ -25,6 +29,8 @@ _PIN = re.compile(r"^ *[-*] +Spec commit *: *`?([0-9a-f]{40})`? *$", re.M)
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _HUB_TIMEOUT = 5.0
+_MAX_MESSAGE = 16 * 1024 * 1024
+_MAX_QUEUE = 256
 _TARGET = {
     "status": "unproven",
     "detail": "same_session_delivery_unproven",
@@ -113,7 +119,7 @@ class _Hub:
         if not value:
             raise _HubError("hub_discovery_invalid")
         url, token = value.get("url"), value.get("authToken")
-        if not isinstance(url, str) or not isinstance(token, str):
+        if not isinstance(url, str) or not isinstance(token, str) or not token:
             raise _HubError("hub_discovery_invalid")
         parsed = urlsplit(url)
         loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
@@ -123,90 +129,54 @@ class _Hub:
         self.branch, self.session_id, self.token = branch, session, token
         self.client_id = f"kotekomi-review-wake-{os.getpid()}"
         self.events: list[JsonObject] = []
+        expected = f"cline-hub-auth.{token}"
         try:
-            self.socket = socket.create_connection(
-                (parsed.hostname, parsed.port), timeout=_HUB_TIMEOUT
+            self.connection: Connection = connect(
+                url,
+                subprotocols=[Subprotocol(expected)],
+                compression=None,
+                proxy=None,
+                open_timeout=_HUB_TIMEOUT,
+                close_timeout=_HUB_TIMEOUT,
+                ping_interval=None,
+                ping_timeout=None,
+                max_size=_MAX_MESSAGE,
+                max_queue=_MAX_QUEUE,
             )
+        except TimeoutError:
+            raise _HubError("hub_unavailable") from None
         except OSError:
             raise _HubError("hub_unavailable") from None
-        self.socket.settimeout(_HUB_TIMEOUT)
-        self.reader = self.socket.makefile("rb")
-        try:
-            self._open(parsed.path or "/", cast(str, parsed.hostname), parsed.port)
-        except OSError:
+        except WebSocketException:
+            raise _HubError("hub_handshake_rejected") from None
+        if self.connection.subprotocol != expected:
             self.close()
-            raise _HubError("hub_unavailable") from None
+            raise _HubError("hub_auth_rejected")
+        try:
+            self._call(
+                "client.register",
+                {
+                    "clientId": self.client_id,
+                    "clientType": "kotekomi-review-wake",
+                    "transport": "native",
+                    "workspaceContext": {
+                        "workspaceRoot": str(self.checkout),
+                        "cwd": str(self.checkout),
+                    },
+                },
+                None,
+                "kotekomi-register",
+            )
+            self._send(
+                {
+                    "kind": "stream.subscribe",
+                    "clientId": self.client_id,
+                    "sessionId": self.session_id,
+                }
+            )
         except _HubError:
             self.close()
             raise
-
-    def _open(self, path: str, host: str, port: int) -> None:
-        key = base64.b64encode(os.urandom(16)).decode("ascii")
-        request = (
-            f"GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nUpgrade: websocket\r\n"
-            "Connection: Upgrade\r\n"
-            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
-            f"Sec-WebSocket-Protocol: cline-hub-auth.{self.token}\r\n\r\n"
-        )
-        self.socket.sendall(request.encode("ascii"))
-        if b" 101 " not in self.reader.readline(1024):
-            raise _HubError("hub_handshake_rejected")
-        while self.reader.readline(8192) not in {b"\r\n", b""}:
-            pass
-        self._call(
-            "client.register",
-            {
-                "clientId": self.client_id,
-                "clientType": "kotekomi-review-wake",
-                "transport": "native",
-                "workspaceContext": {
-                    "workspaceRoot": str(self.checkout),
-                    "cwd": str(self.checkout),
-                },
-            },
-            None,
-            "kotekomi-register",
-        )
-        self._send(
-            {"kind": "stream.subscribe", "clientId": self.client_id, "sessionId": self.session_id}
-        )
-
-    def _read(self, size: int) -> bytes:
-        data = self.reader.read(size)
-        if len(data) != size:
-            raise _HubError("hub_connection_closed")
-        return data
-
-    def _frame(self) -> tuple[int, bytes]:
-        while True:
-            head = self._read(2)
-            opcode, size = head[0] & 15, head[1] & 127
-            if size in {126, 127}:
-                size = int.from_bytes(self._read(2 if size == 126 else 8), "big")
-            mask = self._read(4) if head[1] & 128 else None
-            data = self._read(size)
-            if mask is not None:
-                data = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
-            if opcode == 8:
-                raise _HubError("hub_connection_closed")
-            if opcode != 9:
-                return opcode, data
-            self._write(data, 10)
-
-    def _write(self, data: bytes, opcode: int) -> None:
-        size = len(data)
-        second = size if size < 126 else 126 if size < 65536 else 127
-        extra = b"" if size < 126 else size.to_bytes(2 if size < 65536 else 8, "big")
-        mask = os.urandom(4)
-        masked = bytes(value ^ mask[index % 4] for index, value in enumerate(data))
-        self.socket.sendall(bytes([0x80 | opcode, 0x80 | second]) + extra + mask + masked)
-
-    def _send(self, value: JsonObject) -> None:
-        self._write(json.dumps(value).encode("utf-8"), 1)
-
-    def close(self) -> None:
-        self.reader.close()
-        self.socket.close()
 
     def _call(
         self,
@@ -231,26 +201,42 @@ class _Hub:
             }
         )
         deadline = time.monotonic() + timeout
-        try:
-            while time.monotonic() < deadline:
-                self.socket.settimeout(max(0.1, deadline - time.monotonic()))
-                _, data = self._frame()
-                frame = json.loads(data)
-                if not isinstance(frame, dict):
-                    raise _HubError("hub_protocol_invalid")
-                reply = cast(JsonObject, frame)
-                value = _dict(reply.get("envelope"))
-                if not value:
-                    continue
-                if reply.get("kind") == "reply" and value.get("requestId") == request:
-                    if not value.get("ok"):
-                        raise _HubError(f"hub_{command.replace('.', '_')}_rejected")
-                    return _dict(value.get("payload"))
-                if reply.get("kind") == "event":
-                    self.events.append(value)
-        except TimeoutError:
-            raise _HubError("hub_timeout") from None
+        while time.monotonic() < deadline:
+            try:
+                raw = self.connection.recv(timeout=max(0.1, deadline - time.monotonic()))
+            except TimeoutError:
+                raise _HubError("hub_timeout") from None
+            except ConnectionClosed as error:
+                if error.code == 1009:
+                    raise _HubError("hub_message_too_large") from None
+                raise _HubError("hub_connection_closed") from None
+            except (OSError, WebSocketException):
+                raise _HubError("hub_connection_closed") from None
+            try:
+                frame = json.loads(raw)
+            except json.JSONDecodeError:
+                raise _HubError("hub_protocol_invalid") from None
+            if not isinstance(frame, dict):
+                raise _HubError("hub_protocol_invalid")
+            reply = cast(JsonObject, frame)
+            value = _dict(reply.get("envelope"))
+            if not value:
+                continue
+            if reply.get("kind") == "reply" and value.get("requestId") == request:
+                if not value.get("ok"):
+                    raise _HubError(f"hub_{command.replace('.', '_')}_rejected")
+                return _dict(value.get("payload"))
+            if reply.get("kind") == "event":
+                self.events.append(value)
         raise _HubError("hub_timeout")
+
+    def _send(self, value: JsonObject) -> None:
+        try:
+            self.connection.send(json.dumps(value))
+        except ConnectionClosed:
+            raise _HubError("hub_connection_closed") from None
+        except (OSError, WebSocketException):
+            raise _HubError("hub_send_failed") from None
 
     def status(self) -> str:
         payload = self._call("session.get", {}, self.session_id, "kotekomi-session")
@@ -271,14 +257,32 @@ class _Hub:
             raise _HubError("session_unavailable")
         return value
 
-    def send(self, message: str, comment_id: int) -> None:
+    def history(self, comment_id: int) -> tuple[list[JsonObject], JsonObject]:
+        payload = self._call(
+            "session.messages",
+            {"sessionId": self.session_id},
+            self.session_id,
+            f"kotekomi-history-{comment_id}",
+        )
+        rows = _history_rows(payload)
+        return rows, {"count": len(rows), "sha256": _history_digest(rows)}
+
+    def send(self, message: str, comment_id: int, boundary: JsonObject) -> JsonObject:
         request = f"kotekomi-send-{comment_id}"
         prompt: JsonObject = {"prompt": message, "delivery": "queue", "timeoutSeconds": 60}
+        self.events.clear()
         self._call("session.send_input", prompt, self.session_id, request, 30.0)
-        query: JsonObject = {"sessionId": self.session_id}
         payload = self._call(
-            "session.messages", query, self.session_id, f"kotekomi-messages-{comment_id}"
+            "session.messages",
+            {"sessionId": self.session_id},
+            self.session_id,
+            f"kotekomi-receipt-{comment_id}",
         )
+        rows = _history_rows(payload)
+        count = cast(int, boundary["count"])
+        digest = cast(str, boundary["sha256"])
+        if len(rows) < count or _history_digest(rows[:count]) != digest:
+            raise _HubError("history_changed_unconfirmed")
         started = sum(
             (event.get("event"), event.get("requestId"), event.get("sessionId"))
             == ("run.started", request, self.session_id)
@@ -286,11 +290,75 @@ class _Hub:
         )
         if started != 1:
             raise _HubError("run_started_unconfirmed")
-        messages = payload.get("messages")
-        rows = cast(list[object], messages) if isinstance(messages, list) else []
-        matches = [row for row in rows if message in json.dumps(row, sort_keys=True)]
+        matches = [
+            row
+            for row in rows[count:]
+            if row.get("role") == "user" and _message_text(row) == message
+        ]
+        if not matches:
+            raise _HubError("transcript_entry_missing")
         if len(matches) != 1:
-            raise _HubError("duplicate_transcript_entry" if matches else "transcript_entry_missing")
+            raise _HubError("duplicate_transcript_entry")
+        return {
+            "history_count": count,
+            "history_sha256": digest,
+            "received_message_id": matches[0]["id"],
+        }
+
+    def close(self) -> None:
+        self.connection.close()
+
+
+def _history_rows(payload: JsonObject) -> list[JsonObject]:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        raise _HubError("transcript_unreadable")
+    rows: list[JsonObject] = []
+    for item in cast(list[object], messages):
+        if not isinstance(item, dict):
+            raise _HubError("history_unverifiable")
+        row = cast(JsonObject, item)
+        message_id, role, content = row.get("id"), row.get("role"), row.get("content")
+        if (
+            not isinstance(message_id, str)
+            or not message_id
+            or role not in {"user", "assistant", "tool"}
+            or not isinstance(content, (str, list))
+        ):
+            raise _HubError("history_unverifiable")
+        rows.append(row)
+    ids = [cast(str, row["id"]) for row in rows]
+    if len(set(ids)) != len(ids):
+        raise _HubError("history_duplicate_ids")
+    return rows
+
+
+def _history_digest(rows: list[JsonObject]) -> str:
+    value = [
+        {"id": row.get("id"), "role": row.get("role"), "content": row.get("content")}
+        for row in rows
+    ]
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _message_text(row: JsonObject) -> str:
+    content = row.get("content")
+    if isinstance(content, str):
+        text = content
+    else:
+        parts = cast(list[object], content) if isinstance(content, list) else []
+        values: list[str] = []
+        for part in parts:
+            block = _dict(part)
+            value = block.get("text")
+            if block.get("type") == "text" and isinstance(value, str):
+                values.append(value)
+        text = "\n".join(values)
+    wrapped = re.fullmatch(r"\s*<user_input[^>]*>(.*)</user_input>\s*", text, re.S)
+    return (wrapped.group(1) if wrapped else text).strip()
 
 
 def _check(state_path: Path, data: JsonObject, enrollment: JsonObject) -> tuple[int, JsonObject]:
@@ -401,6 +469,7 @@ def _deliver(
         return {**outcome, "status": "blocked", "detail": "hub_discovery_invalid"}
     hub: _Hub | None = None
     intent = False
+    record = outcome
     try:
         hub = _Hub(
             Path(hub_value),
@@ -413,18 +482,29 @@ def _deliver(
             return {**outcome, "status": "queued", "detail": "target_busy"}
         if status not in {"idle", "completed", "aborted"}:
             return {**outcome, "status": "blocked", "detail": "session_binding_unproven"}
+        _, boundary = hub.history(int(key))
+        record = {
+            **outcome,
+            "history_count": boundary["count"],
+            "history_sha256": boundary["sha256"],
+        }
         alerts = cast(dict[str, JsonObject], data["alerts"])
-        alerts[key] = {**outcome, "status": "sending", "detail": "send_intent_recorded"}
+        alerts[key] = {**record, "status": "sending", "detail": "send_intent_recorded"}
         _save(state_path, data)
         intent = True
-        hub.send(str(outcome["message"]), int(key))
-        return {**outcome, "status": "delivered", "detail": "one_matching_transcript_entry"}
+        receipt = hub.send(str(outcome["message"]), int(key), boundary)
+        return {
+            **record,
+            "status": "delivered",
+            "detail": "one_matching_transcript_entry",
+            **receipt,
+        }
     except _HubError as error:
         detail = str(error)
         if intent:
             detail = "hub_send_rejected" if detail.endswith("_rejected") else detail
             status = "failed" if detail == "hub_send_rejected" else "unknown"
-            return {**outcome, "status": status, "detail": detail}
+            return {**record, "status": status, "detail": detail}
         if detail in {"hub_unavailable", "hub_timeout", "hub_discovery_unreadable"}:
             return {**outcome, "status": "queued", "detail": "target_unavailable"}
         return {**outcome, "status": "blocked", "detail": detail}

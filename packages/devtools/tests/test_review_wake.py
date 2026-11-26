@@ -172,8 +172,8 @@ def _read_frame(stream: BinaryIO) -> tuple[int, bytes]:
     return opcode, data
 
 
-def _write_frame(stream: BinaryIO, data: bytes, opcode: int = 1) -> None:
-    header = bytes([0x80 | opcode])
+def _write_frame(stream: BinaryIO, data: bytes, opcode: int = 1, *, fin: bool = True) -> None:
+    header = bytes([(0x80 if fin else 0) | opcode])
     if len(data) < 126:
         header += bytes([len(data)])
     elif len(data) < 65536:
@@ -196,6 +196,15 @@ class FakeHub:
         started: bool = True,
         transcript: str = "one",
         send_error: bool = False,
+        history: list[dict[str, Any]] | None = None,
+        fragmented: bool = False,
+        accept: str = "valid",
+        subprotocol: str = "valid",
+        redirect: bool = False,
+        disconnect: bool = False,
+        silent: bool = False,
+        oversized: bool = False,
+        mutate_history: str | None = None,
     ) -> None:
         self.status = status
         self.session_id = session_id
@@ -204,14 +213,23 @@ class FakeHub:
         self.started = started
         self.transcript = transcript
         self.send_error = send_error
-        self.messages: list[dict[str, object]] = []
+        self.fragmented = fragmented
+        self.accept = accept
+        self.subprotocol = subprotocol
+        self.redirect = redirect
+        self.disconnect = disconnect
+        self.silent = silent
+        self.oversized = oversized
+        self.mutate_history = mutate_history
+        self.messages: list[dict[str, Any]] = list(history or [])
+        self.token = cast(str, json.loads(workspace.hub.read_text())["authToken"])
         self.server = socket.socket()
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind(("127.0.0.1", 0))
         self.server.listen()
         port = self.server.getsockname()[1]
         workspace.hub.write_text(
-            json.dumps({"url": f"ws://127.0.0.1:{port}/hub", "authToken": "fixture-token"})
+            json.dumps({"url": f"ws://127.0.0.1:{port}/hub", "authToken": self.token})
         )
         threading.Thread(target=self._serve, daemon=True).start()
 
@@ -244,18 +262,27 @@ class FakeHub:
             name, _, value = line.partition(":")
             if value:
                 headers[name.strip().lower()] = value.strip()
+        if self.redirect:
+            writer.write(b"HTTP/1.1 302 Found\r\nLocation: ws://127.0.0.1:1/hub\r\n\r\n")
+            writer.flush()
+            return
         accept = base64.b64encode(
             hashlib.sha1((headers["sec-websocket-key"] + _WS_GUID).encode()).digest()
         ).decode()
-        writer.write(
-            (
-                "HTTP/1.1 101 Switching Protocols\r\n"
-                "Upgrade: websocket\r\n"
-                "Connection: Upgrade\r\n"
-                f"Sec-WebSocket-Accept: {accept}\r\n"
-                "Sec-WebSocket-Protocol: cline-hub-auth.fixture-token\r\n\r\n"
-            ).encode()
-        )
+        if self.accept != "valid":
+            accept = self.accept
+        lines = [
+            "HTTP/1.1 101 Switching Protocols",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            f"Sec-WebSocket-Accept: {accept}",
+        ]
+        if self.subprotocol != "missing":
+            selected = (
+                f"cline-hub-auth.{self.token}" if self.subprotocol == "valid" else self.subprotocol
+            )
+            lines.append(f"Sec-WebSocket-Protocol: {selected}")
+        writer.write(("\r\n".join(lines) + "\r\n\r\n").encode())
         writer.flush()
         while True:
             opcode, data = _read_frame(reader)
@@ -270,7 +297,11 @@ class FakeHub:
             command = envelope["command"]
             if command == "client.register":
                 self._reply(writer, envelope, {})
+                if self.disconnect:
+                    return
             elif command == "session.get":
+                if self.silent:
+                    continue
                 session = {
                     "sessionId": self.session_id,
                     "cwd": self.cwd,
@@ -280,6 +311,11 @@ class FakeHub:
                 }
                 self._reply(writer, envelope, {"session": session, "snapshot": {}})
             elif command == "session.messages":
+                if self.silent:
+                    continue
+                if self.oversized:
+                    _write_frame(writer, b"x" * (16 * 1024 * 1024 + 1))
+                    return
                 self._reply(writer, envelope, {"messages": self.messages})
             elif command == "session.send_input":
                 if self.send_error:
@@ -292,17 +328,40 @@ class FakeHub:
                     continue
                 if self.started:
                     self._event(writer, envelope, "run.started", {"runId": "run-1"})
-                prompt = cast(dict[str, object], envelope["payload"])["prompt"]
-                if self.transcript in {"one", "two"}:
-                    self._append(str(prompt))
-                if self.transcript == "two":
-                    self._append(str(prompt))
+                self._mutate()
+                prompt = str(cast(dict[str, object], envelope["payload"])["prompt"])
+                if self.transcript == "one":
+                    self._append(prompt)
+                elif self.transcript == "two":
+                    self._append(prompt)
+                    self._append(prompt)
+                elif self.transcript == "assistant":
+                    self._append(prompt, role="assistant")
+                elif self.transcript == "tool":
+                    self._append(prompt, role="tool")
+                elif self.transcript == "wrapped":
+                    self._append(f'<user_input mode="act">{prompt}</user_input>')
                 self._reply(writer, envelope, {"requestId": envelope["requestId"]})
             else:
                 self._reply(writer, envelope, {}, {"code": "unsupported", "message": "fixture"})
 
-    def _append(self, prompt: str) -> None:
-        self.messages.append({"role": "user", "content": [{"type": "text", "text": prompt}]})
+    def _mutate(self) -> None:
+        if self.mutate_history == "content" and self.messages:
+            self.messages[0]["content"] = [{"type": "text", "text": "changed history"}]
+        elif self.mutate_history == "truncate" and self.messages:
+            self.messages.pop(0)
+        elif self.mutate_history == "reorder" and len(self.messages) > 1:
+            self.messages.reverse()
+
+    def _append(self, prompt: str, *, role: str = "user") -> None:
+        self.messages.append(
+            {
+                "id": f"msg-{len(self.messages) + 1}",
+                "role": role,
+                "content": [{"type": "text", "text": prompt}],
+                "createdAt": len(self.messages) + 1,
+            }
+        )
 
     def _reply(
         self,
@@ -318,7 +377,13 @@ class FakeHub:
         }
         if error is not None:
             reply["error"] = error
-        _write_frame(writer, json.dumps({"kind": "reply", "envelope": reply}).encode())
+        encoded = json.dumps({"kind": "reply", "envelope": reply}).encode()
+        if self.fragmented:
+            split = len(encoded) // 2
+            _write_frame(writer, encoded[:split], fin=False)
+            _write_frame(writer, encoded[split:], 0)
+            return
+        _write_frame(writer, encoded)
 
     def _event(
         self,
@@ -508,6 +573,17 @@ def _message(comment_id: int) -> str:
     return f"New review comment on your current PR: {_url(comment_id)}. Please check it."
 
 
+def _history(
+    message_id: str, role: str, text: str, *, content: list[dict[str, object]] | None = None
+) -> dict[str, object]:
+    return {
+        "id": message_id,
+        "role": role,
+        "content": content or [{"type": "text", "text": text}],
+        "createdAt": 1,
+    }
+
+
 def test_authorized_valid_comment_delivers_to_proven_idle_session(tmp_path: Path) -> None:
     workspace = Workspace(tmp_path)
     hub = FakeHub(workspace)
@@ -529,13 +605,280 @@ def test_authorized_valid_comment_delivers_to_proven_idle_session(tmp_path: Path
             "url": _url(7001),
             "detail": "one_matching_transcript_entry",
             "message": _message(7001),
+            "history_count": 0,
+            "history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "received_message_id": "msg-1",
         }
     ]
-    assert hub.messages == [{"role": "user", "content": [{"type": "text", "text": _message(7001)}]}]
+    assert len(hub.messages) == 1
+    assert hub.messages[0]["role"] == "user"
+    assert hub.messages[0]["content"] == [{"type": "text", "text": _message(7001)}]
     assert _stored(workspace, 7001)["status"] == "delivered"
     serialized = json.dumps(payload)
     assert "rm -rf" not in serialized
     assert "paste the token" not in serialized
+
+
+@pytest.mark.parametrize("role", ["user", "assistant"])
+def test_historical_alert_cannot_establish_receipt(tmp_path: Path, role: str) -> None:
+    workspace = Workspace(tmp_path)
+    message = _message(7011)
+    history = [{"id": f"old-{role}", "role": role, "content": [{"type": "text", "text": message}]}]
+    hub = FakeHub(workspace, transcript="none", history=history)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7011)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "unknown"
+    assert _alerts(payload)[0]["detail"] == "transcript_entry_missing"
+    assert _stored(workspace, 7011)["status"] == "unknown"
+    assert len(hub.messages) == 1
+
+
+def test_new_user_alert_with_historical_matches_delivers(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    message = _message(7012)
+    history = [
+        _history("old-user", "user", message),
+        _history("old-assistant", "assistant", message),
+    ]
+    hub = FakeHub(workspace, history=history)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7012)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "delivered"
+    assert _alerts(payload)[0]["history_count"] == 2
+    assert _alerts(payload)[0]["received_message_id"] == "msg-3"
+    assert len(hub.messages) == 3
+
+
+def test_assistant_echo_only_is_not_receipt(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    message = _message(7013)
+    hub = FakeHub(
+        workspace,
+        transcript="assistant",
+        history=[_history("old-user", "user", message)],
+    )
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7013)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "unknown"
+    assert _alerts(payload)[0]["detail"] == "transcript_entry_missing"
+    assert len(hub.messages) == 2
+
+
+def test_tool_result_in_new_rows_is_not_receipt(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    FakeHub(workspace, transcript="tool")
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7014)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "unknown"
+    assert _alerts(payload)[0]["detail"] == "transcript_entry_missing"
+
+
+def test_tool_bearing_history_is_bound_and_delivered(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    history = [
+        _history(
+            "tool-1",
+            "tool",
+            "",
+            content=[
+                {
+                    "type": "tool_result",
+                    "toolCallId": "call-1",
+                    "content": "fixture tool output",
+                }
+            ],
+        ),
+        _history("old-user", "user", "older operator input"),
+    ]
+    hub = FakeHub(workspace, history=history)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7015)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "delivered"
+    assert _alerts(payload)[0]["history_count"] == 2
+    assert len(hub.messages) == 3
+
+
+def test_wrapped_user_input_is_narrowly_unwrapped(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    FakeHub(workspace, transcript="wrapped")
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7016)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "delivered"
+
+
+@pytest.mark.parametrize("mutation", ["content", "truncate", "reorder"])
+def test_changed_or_truncated_history_is_unconfirmed(tmp_path: Path, mutation: str) -> None:
+    workspace = Workspace(tmp_path)
+    history = [
+        _history("old-1", "user", "older input one"),
+        _history("old-2", "assistant", "older response two"),
+    ]
+    hub = FakeHub(workspace, history=history, mutate_history=mutation)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7017)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "unknown"
+    assert _alerts(payload)[0]["detail"] == "history_changed_unconfirmed"
+    assert _stored(workspace, 7017)["status"] == "unknown"
+    sent = len(hub.messages)
+
+    repeated = _payload(workspace.check())
+
+    assert _alerts(repeated) == []
+    assert len(hub.messages) == sent
+
+
+def test_missing_message_id_blocks_before_send(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    history = [{"role": "user", "content": [{"type": "text", "text": "older input"}]}]
+    hub = FakeHub(workspace, history=history)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7018)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "blocked"
+    assert _alerts(payload)[0]["detail"] == "history_unverifiable"
+    assert len(hub.messages) == 1
+
+
+def test_duplicate_message_id_blocks_before_send(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    history = [
+        _history("same", "user", "older input"),
+        _history("same", "assistant", "older response"),
+    ]
+    hub = FakeHub(workspace, history=history)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7019)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "blocked"
+    assert _alerts(payload)[0]["detail"] == "history_duplicate_ids"
+    assert len(hub.messages) == 2
+
+
+def test_fragmented_transport_message_delivers(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace, fragmented=True)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7020)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "delivered"
+    assert len(hub.messages) == 1
+
+
+@pytest.mark.parametrize(
+    "options,detail",
+    [
+        ({"accept": "invalid"}, "hub_handshake_rejected"),
+        ({"subprotocol": "missing"}, "hub_auth_rejected"),
+        ({"redirect": True}, "hub_handshake_rejected"),
+        ({"oversized": True}, "hub_message_too_large"),
+        ({"disconnect": True}, "hub_connection_closed"),
+    ],
+)
+def test_transport_rejection_is_blocked_without_send(
+    tmp_path: Path, options: dict[str, object], detail: str
+) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace, **cast(Any, options))
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7021)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] in {"blocked", "queued"}
+    assert _alerts(payload)[0]["detail"] in {
+        detail,
+        "target_unavailable",
+        "hub_connection_closed",
+    }
+    assert hub.messages == []
+
+
+def test_wrong_subprotocol_is_blocked_without_send(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace, subprotocol="cline-hub-auth.wrong")
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7022)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "blocked"
+    assert _alerts(payload)[0]["detail"] in {
+        "hub_auth_rejected",
+        "hub_handshake_rejected",
+    }
+    assert hub.messages == []
+
+
+def test_transport_timeout_is_queued_without_send(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace, silent=True)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7023)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "queued"
+    assert _alerts(payload)[0]["detail"] == "target_unavailable"
+    assert hub.messages == []
+
+
+def test_transport_errors_do_not_leak_token(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    workspace.hub.write_text(
+        json.dumps({"url": "ws://127.0.0.1:1/hub", "authToken": "very-secret-token"})
+    )
+    hub = FakeHub(workspace, accept="invalid")
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7024)])
+
+    result = workspace.check()
+
+    payload = _payload(result)
+    serialized = result.stdout + result.stderr + json.dumps(payload)
+    assert "very-secret-token" not in serialized
+    assert _alerts(payload)[0]["status"] == "blocked"
+    assert hub.messages == []
 
 
 def test_busy_target_is_queued_and_delivered_once_idle(tmp_path: Path) -> None:
