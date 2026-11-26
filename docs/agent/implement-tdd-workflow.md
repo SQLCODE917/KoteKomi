@@ -106,6 +106,7 @@ uv run kotekomi-agent review-wake enroll \
   --branch spec/targeted-review-wake-refresh \
   --pin <full-lowercase-spec-sha> \
   --session-id <existing-terminal-cline-session-id> \
+  --hub "$HOME/.local/share/monai/projects/<project-id>/cline/locks/hub/production.json" \
   --author <trusted-comment-author> \
   --operator <operator-login> \
   --harness-run <existing-harness-run-id>
@@ -138,10 +139,15 @@ Each poll prints one JSON object.
 The alert `message` is fixed: `New review comment on your current PR: <comment URL>. Please check it.`
 The listener never includes the comment body or command text in the alert.
 
-The installed terminal Cline surface exposes no verified same-session input command for this pilot.
-The listener therefore reports `target.delivery: notification-only` with `detail: same_session_delivery_unproven`.
+The listener uses the local Cline Hub's declared v1 WebSocket protocol with the token from the enrolled discovery file.
+It verifies the exact session ID, checkout, current branch, and idle status before sending.
+It sends only the fixed alert plus the trusted comment link to that enrolled session.
+It records send intent before transmission, correlates `run.started` with the request and exact session, and requires exactly one matching transcript entry.
+A busy or unavailable target is queued and revalidated on a later poll.
+An unproven session binding is blocked, and an unconfirmed or ambiguous send becomes `unknown` without a blind retry.
+Delivered, notified, blocked, unknown, and failed records are never replayed after restart.
+The token stays in the discovery file; it is never passed as an argument or printed.
 The listener does not spawn a task, press approvals, or change sandbox settings.
-Resume the enrolled session manually.
 The enrollment records the existing Harness run ID.
 The listener creates no second implementation lifecycle.
 

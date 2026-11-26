@@ -689,6 +689,7 @@ def _build_parser() -> argparse.ArgumentParser:
     rw.add_argument("--branch")
     rw.add_argument("--pin")
     rw.add_argument("--session-id")
+    rw.add_argument("--hub", type=Path)
     rw.add_argument("--author")
     rw.add_argument("--operator")
     rw.add_argument("--authorize-shared-account", action="store_true")
