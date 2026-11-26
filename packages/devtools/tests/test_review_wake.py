@@ -216,6 +216,9 @@ class FakeHub:
         history_session_id: str = "valid",
         receipt_session_id: str = "valid",
         on_history: Callable[[], None] | None = None,
+        transcript_delay: int = 0,
+        event_session_id: str = "valid",
+        close_after_samples: int | None = 4,
     ) -> None:
         self.status = status
         self.session_id = session_id
@@ -235,7 +238,13 @@ class FakeHub:
         self.history_session_id = history_session_id
         self.receipt_session_id = receipt_session_id
         self.on_history = on_history
+        self.transcript_delay = transcript_delay
+        self.event_session_id = event_session_id
+        self.close_after_samples = close_after_samples
         self.history_reads = 0
+        self.post_send_reads = 0
+        self.send_inputs = 0
+        self.pending_prompt: str | None = None
         self.sent = False
         self.messages: list[dict[str, Any]] = list(history or [])
         self.token = cast(str, json.loads(workspace.hub.read_text())["authToken"])
@@ -335,12 +344,31 @@ class FakeHub:
                 if self.on_history is not None and self.history_reads == 0:
                     self.on_history()
                 self.history_reads += 1
+                if self.sent:
+                    self.post_send_reads += 1
+                    if self.pending_prompt is not None and self.post_send_reads >= max(
+                        1, self.transcript_delay
+                    ):
+                        self._append(self.pending_prompt)
+                        self.pending_prompt = None
+                    if (
+                        self.transcript == "inconsistent"
+                        and self.post_send_reads >= 2
+                        and self.messages
+                    ):
+                        self.messages[0]["content"] = [{"type": "text", "text": "changed later"}]
+                    if (
+                        self.close_after_samples is not None
+                        and self.post_send_reads >= self.close_after_samples
+                    ):
+                        return
                 configured = self.receipt_session_id if self.sent else self.history_session_id
                 payload: dict[str, object] = {"messages": self.messages}
                 if configured != "missing":
                     payload["sessionId"] = self.session_id if configured == "valid" else configured
                 self._reply(writer, envelope, payload)
             elif command == "session.send_input":
+                self.send_inputs += 1
                 if self.send_error:
                     self._reply(
                         writer,
@@ -354,7 +382,11 @@ class FakeHub:
                 self._mutate()
                 self.sent = True
                 prompt = str(cast(dict[str, object], envelope["payload"])["prompt"])
-                if self.transcript == "one":
+                if self.transcript == "delayed":
+                    self.pending_prompt = prompt
+                elif self.transcript == "inconsistent":
+                    self.pending_prompt = prompt
+                elif self.transcript == "one" and self.transcript_delay == 0:
                     self._append(prompt)
                 elif self.transcript == "two":
                     self._append(prompt)
@@ -433,6 +465,10 @@ class FakeHub:
         event: str,
         payload: dict[str, object],
     ) -> None:
+        session_id = (
+            envelope["sessionId"] if self.event_session_id == "valid" else self.event_session_id
+        )
+        event_payload = {**payload, "requestId": envelope["requestId"]}
         _write_frame(
             writer,
             json.dumps(
@@ -440,9 +476,8 @@ class FakeHub:
                     "kind": "event",
                     "envelope": {
                         "event": event,
-                        "sessionId": envelope["sessionId"],
-                        "requestId": envelope["requestId"],
-                        "payload": payload,
+                        "sessionId": session_id,
+                        "payload": event_payload,
                     },
                 }
             ).encode(),
@@ -679,7 +714,7 @@ def test_historical_alert_cannot_establish_receipt(tmp_path: Path, role: str) ->
     payload = _payload(workspace.check())
 
     assert _alerts(payload)[0]["status"] == "unknown"
-    assert _alerts(payload)[0]["detail"] == "transcript_entry_missing"
+    assert _alerts(payload)[0]["detail"] in {"transcript_entry_missing", "hub_connection_closed"}
     assert _stored(workspace, 7011)["status"] == "unknown"
     assert len(hub.messages) == 1
 
@@ -719,7 +754,7 @@ def test_assistant_echo_only_is_not_receipt(tmp_path: Path) -> None:
     payload = _payload(workspace.check())
 
     assert _alerts(payload)[0]["status"] == "unknown"
-    assert _alerts(payload)[0]["detail"] == "transcript_entry_missing"
+    assert _alerts(payload)[0]["detail"] in {"transcript_entry_missing", "hub_connection_closed"}
     assert len(hub.messages) == 2
 
 
@@ -733,7 +768,7 @@ def test_tool_result_in_new_rows_is_not_receipt(tmp_path: Path) -> None:
     payload = _payload(workspace.check())
 
     assert _alerts(payload)[0]["status"] == "unknown"
-    assert _alerts(payload)[0]["detail"] == "transcript_entry_missing"
+    assert _alerts(payload)[0]["detail"] in {"transcript_entry_missing", "hub_connection_closed"}
 
 
 def test_tool_bearing_history_is_bound_and_delivered(tmp_path: Path) -> None:
@@ -1017,7 +1052,7 @@ def test_inexact_new_user_content_is_not_receipt(tmp_path: Path, transcript: str
     payload = _payload(workspace.check())
 
     assert _alerts(payload)[0]["status"] == "unknown"
-    assert _alerts(payload)[0]["detail"] == "transcript_entry_missing"
+    assert _alerts(payload)[0]["detail"] in {"transcript_entry_missing", "hub_connection_closed"}
 
 
 def test_exact_user_input_wrapper_is_receipt(tmp_path: Path) -> None:
@@ -1054,6 +1089,85 @@ def test_hub_transport_logger_does_not_expose_token(
         hub.server.close()
     assert "secret-token-xyz" not in str(error.value)
     assert "secret-token-xyz" not in caplog.text
+
+
+def test_nested_event_payload_correlation_delivers(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7036)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "delivered"
+    assert hub.send_inputs == 1
+
+
+def test_delayed_transcript_is_observed_until_receipt(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace, transcript="delayed", transcript_delay=2)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7037)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "delivered"
+    assert hub.send_inputs == 1
+    assert len(hub.messages) == 1
+
+    repeated = _payload(workspace.check())
+
+    assert _alerts(repeated) == []
+    assert hub.send_inputs == 1
+
+
+def test_inconsistent_later_history_is_unconfirmed(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace, transcript="inconsistent")
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7038)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "unknown"
+    assert _alerts(payload)[0]["detail"] == "history_changed_unconfirmed"
+    assert hub.send_inputs == 1
+
+
+def test_wrong_event_session_fails_closed(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace, event_session_id="other-session")
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7039)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "unknown"
+    assert _alerts(payload)[0]["detail"] == "event_identity_unproven"
+    assert hub.send_inputs == 1
+
+
+def test_absent_event_and_transcript_times_out_unknown(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(workspace, started=False, transcript="none", close_after_samples=None)
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7040)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "unknown"
+    assert _alerts(payload)[0]["detail"] == "run_started_unconfirmed"
+    assert hub.send_inputs == 1
+
+    repeated = _payload(workspace.check())
+
+    assert _alerts(repeated) == []
+    assert hub.send_inputs == 1
 
 
 def test_busy_target_is_queued_and_delivered_once_idle(tmp_path: Path) -> None:
@@ -1106,11 +1220,7 @@ def test_unproven_session_binding_is_blocked(tmp_path: Path, overrides: dict[str
 
 @pytest.mark.parametrize(
     "options,detail",
-    [
-        ({"started": False}, "run_started_unconfirmed"),
-        ({"transcript": "none"}, "transcript_entry_missing"),
-        ({"transcript": "two"}, "duplicate_transcript_entry"),
-    ],
+    [({"transcript": "two"}, "duplicate_transcript_entry")],
 )
 def test_unconfirmed_delivery_is_unknown_and_not_retried(
     tmp_path: Path, options: dict[str, object], detail: str

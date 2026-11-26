@@ -146,7 +146,10 @@ Immediately before transmission it re-fetches the selected comment and PR, reche
 Before transmission it records the ordered message-ID prefix count and digest, then persists send intent.
 It sends only the fixed alert plus the trusted comment link to that enrolled session.
 Both transcript reads must name the enrolled session; a missing or foreign session identity blocks before send or remains unknown after send.
-After a request- and session-correlated `run.started`, it requires the prefix to be unchanged and exactly one new user message with a single exact text block containing the fixed alert.
+It sends the input once, then observes events and transcript samples under one 30-second monotonic receipt deadline.
+The `run.started` correlation reads `payload.requestId` and requires the envelope session ID to match.
+It requires the prefix to be unchanged and exactly one new user message with a single exact text block containing the fixed alert, confirmed by a subsequent stable sample.
+Missing evidence is sampled again until the deadline; contradictory identity/history and duplicate receipts fail closed.
 A historical match, assistant echo, tool result or mixed content, malformed wrapper, changed whitespace, changed prefix, or duplicate new alert cannot establish delivery.
 The only accepted transport wrapper is `<user_input mode="act|plan|yolo">...</user_input>` around the entire exact alert.
 A dedicated non-propagating transport logger suppresses library handshake records so tokens cannot reach DEBUG output.

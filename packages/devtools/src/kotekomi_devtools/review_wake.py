@@ -33,6 +33,9 @@ _USER_INPUT = re.compile(r'<user_input mode="(?:act|plan|yolo)">(.*)</user_input
 _HUB_TIMEOUT = 5.0
 _MAX_MESSAGE = 16 * 1024 * 1024
 _MAX_QUEUE = 256
+_RECEIPT_DEADLINE = 30.0
+_RECEIPT_SAMPLE_TIMEOUT = 5.0
+_RECEIPT_POLL = 1.0
 _HUB_LOGGER = logging.Logger("kotekomi.review_wake.hub_transport", level=logging.CRITICAL + 1)
 _HUB_LOGGER.addHandler(logging.NullHandler())
 _HUB_LOGGER.propagate = False
@@ -278,41 +281,81 @@ class _Hub:
         prompt: JsonObject = {"prompt": message, "delivery": "queue", "timeoutSeconds": 60}
         self.events.clear()
         self._call("session.send_input", prompt, self.session_id, request, 30.0)
-        payload = self._call(
-            "session.messages",
-            {"sessionId": self.session_id},
-            self.session_id,
-            f"kotekomi-receipt-{comment_id}",
-        )
-        rows = _transcript_rows(payload, self.session_id)
+        deadline = time.monotonic() + _RECEIPT_DEADLINE
         count = cast(int, boundary["count"])
         digest = cast(str, boundary["sha256"])
-        if len(rows) < count or _history_digest(rows[:count]) != digest:
-            raise _HubError("history_changed_unconfirmed")
-        started = sum(
-            (event.get("event"), event.get("requestId"), event.get("sessionId"))
-            == ("run.started", request, self.session_id)
-            for event in self.events
-        )
-        if started != 1:
+        confirmed: JsonObject | None = None
+        event_seen = False
+        receipt_seen = False
+        sample = 0
+        while time.monotonic() < deadline:
+            sample += 1
+            remaining = deadline - time.monotonic()
+            try:
+                payload = self._call(
+                    "session.messages",
+                    {"sessionId": self.session_id},
+                    self.session_id,
+                    f"kotekomi-receipt-{comment_id}-{sample}",
+                    min(remaining, _RECEIPT_SAMPLE_TIMEOUT),
+                )
+            except _HubError as error:
+                if str(error) == "hub_timeout":
+                    continue
+                raise
+            rows = _transcript_rows(payload, self.session_id)
+            if len(rows) < count or _history_digest(rows[:count]) != digest:
+                raise _HubError("history_changed_unconfirmed")
+            matches = [
+                row
+                for row in rows[count:]
+                if row.get("role") == "user" and _message_text(row) == message
+            ]
+            if len(matches) > 1:
+                raise _HubError("duplicate_transcript_entry")
+            event_seen = _correlated_started(self.events, request, self.session_id)
+            if matches:
+                receipt_seen = True
+                if event_seen:
+                    if confirmed is None:
+                        confirmed = matches[0]
+                    elif confirmed.get("id") != matches[0].get("id"):
+                        raise _HubError("duplicate_transcript_entry")
+                    else:
+                        return {
+                            "history_count": count,
+                            "history_sha256": digest,
+                            "received_message_id": matches[0]["id"],
+                        }
+                elif confirmed is not None:
+                    raise _HubError("history_changed_unconfirmed")
+            elif confirmed is not None:
+                raise _HubError("history_changed_unconfirmed")
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(_RECEIPT_POLL, remaining))
+        if receipt_seen:
             raise _HubError("run_started_unconfirmed")
-        matches = [
-            row
-            for row in rows[count:]
-            if row.get("role") == "user" and _message_text(row) == message
-        ]
-        if not matches:
+        if event_seen:
             raise _HubError("transcript_entry_missing")
-        if len(matches) != 1:
-            raise _HubError("duplicate_transcript_entry")
-        return {
-            "history_count": count,
-            "history_sha256": digest,
-            "received_message_id": matches[0]["id"],
-        }
+        raise _HubError("run_started_unconfirmed")
 
     def close(self) -> None:
         self.connection.close()
+
+
+def _correlated_started(events: list[JsonObject], request: str, session_id: str) -> bool:
+    matched = False
+    for event in events:
+        if event.get("event") != "run.started":
+            continue
+        payload = _dict(event.get("payload"))
+        if payload.get("requestId") != request:
+            continue
+        if event.get("sessionId") != session_id:
+            raise _HubError("event_identity_unproven")
+        matched = True
+    return matched
 
 
 def _transcript_rows(payload: JsonObject, session_id: str) -> list[JsonObject]:
