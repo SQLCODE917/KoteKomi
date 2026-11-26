@@ -218,6 +218,7 @@ class FakeHub:
         on_history: Callable[[], None] | None = None,
         transcript_delay: int = 0,
         event_session_id: str = "valid",
+        event_request_id: str = "valid",
         close_after_samples: int | None = 4,
     ) -> None:
         self.status = status
@@ -240,6 +241,7 @@ class FakeHub:
         self.on_history = on_history
         self.transcript_delay = transcript_delay
         self.event_session_id = event_session_id
+        self.event_request_id = event_request_id
         self.close_after_samples = close_after_samples
         self.history_reads = 0
         self.post_send_reads = 0
@@ -468,7 +470,11 @@ class FakeHub:
         session_id = (
             envelope["sessionId"] if self.event_session_id == "valid" else self.event_session_id
         )
-        event_payload = {**payload, "requestId": envelope["requestId"]}
+        event_payload = dict(payload)
+        if self.event_request_id == "valid":
+            event_payload["requestId"] = envelope["requestId"]
+        elif self.event_request_id != "missing":
+            event_payload["requestId"] = self.event_request_id
         _write_frame(
             writer,
             json.dumps(
@@ -1151,9 +1157,22 @@ def test_wrong_event_session_fails_closed(tmp_path: Path) -> None:
     assert hub.send_inputs == 1
 
 
-def test_absent_event_and_transcript_times_out_unknown(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "options,detail",
+    [
+        ({"started": False, "transcript": "one"}, "run_started_unconfirmed"),
+        ({"started": True, "transcript": "none"}, "transcript_entry_missing"),
+    ],
+)
+def test_missing_evidence_times_out_unknown(
+    tmp_path: Path, options: dict[str, object], detail: str
+) -> None:
     workspace = Workspace(tmp_path)
-    hub = FakeHub(workspace, started=False, transcript="none", close_after_samples=None)
+    hub = FakeHub(
+        workspace,
+        close_after_samples=None,
+        **cast(Any, options),
+    )
     _payload(workspace.enroll())
     workspace.set_pr()
     workspace.set_comments([_comment(7040)])
@@ -1161,7 +1180,37 @@ def test_absent_event_and_transcript_times_out_unknown(tmp_path: Path) -> None:
     payload = _payload(workspace.check())
 
     assert _alerts(payload)[0]["status"] == "unknown"
-    assert _alerts(payload)[0]["detail"] == "run_started_unconfirmed"
+    assert _alerts(payload)[0]["detail"] == detail
+    assert hub.send_inputs == 1
+
+    repeated = _payload(workspace.check())
+
+    assert _alerts(repeated) == []
+    assert hub.send_inputs == 1
+
+
+@pytest.mark.parametrize("request_id", ["wrong", "missing"])
+def test_wrong_or_missing_payload_request_id_is_unconfirmed(
+    tmp_path: Path, request_id: str
+) -> None:
+    workspace = Workspace(tmp_path)
+    hub = FakeHub(
+        workspace,
+        transcript="one",
+        event_request_id=request_id,
+        close_after_samples=4,
+    )
+    _payload(workspace.enroll())
+    workspace.set_pr()
+    workspace.set_comments([_comment(7041)])
+
+    payload = _payload(workspace.check())
+
+    assert _alerts(payload)[0]["status"] == "unknown"
+    assert _alerts(payload)[0]["detail"] in {
+        "run_started_unconfirmed",
+        "hub_connection_closed",
+    }
     assert hub.send_inputs == 1
 
     repeated = _payload(workspace.check())
