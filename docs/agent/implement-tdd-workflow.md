@@ -142,10 +142,14 @@ The listener never includes the comment body or command text in the alert.
 The listener uses the declared `websockets==16.1` synchronous client with the local Cline Hub's v1 loopback protocol and the token from the enrolled discovery file.
 It validates the negotiated `cline-hub-auth.<token>` subprotocol and fails closed when the selected subprotocol is missing or wrong.
 It verifies the exact session ID, checkout, current branch, and idle status before sending.
+Immediately before transmission it re-fetches the selected comment and PR, rechecks repository/PR membership, open state, current head, canonical pin, and shared-account authorization, and rechecks idle status after history preparation.
 Before transmission it records the ordered message-ID prefix count and digest, then persists send intent.
 It sends only the fixed alert plus the trusted comment link to that enrolled session.
-After a request- and session-correlated `run.started`, it requires the prefix to be unchanged and exactly one new user message containing the exact fixed alert.
-A historical match, assistant echo, tool result, changed prefix, or duplicate new alert cannot establish delivery.
+Both transcript reads must name the enrolled session; a missing or foreign session identity blocks before send or remains unknown after send.
+After a request- and session-correlated `run.started`, it requires the prefix to be unchanged and exactly one new user message with a single exact text block containing the fixed alert.
+A historical match, assistant echo, tool result or mixed content, malformed wrapper, changed whitespace, changed prefix, or duplicate new alert cannot establish delivery.
+The only accepted transport wrapper is `<user_input mode="act|plan|yolo">...</user_input>` around the entire exact alert.
+A dedicated non-propagating transport logger suppresses library handshake records so tokens cannot reach DEBUG output.
 A busy or unavailable target is queued and revalidated on a later poll.
 An unproven session binding or unverifiable history is blocked, and an unconfirmed or ambiguous send becomes `unknown` without a blind retry.
 Delivered, notified, blocked, unknown, and failed records are never replayed after restart.

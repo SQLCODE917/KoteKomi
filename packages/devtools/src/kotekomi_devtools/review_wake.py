@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -28,9 +29,13 @@ _HANDOFF = re.compile(r"^## +Current Handoff *$(.*?)(?=^#{1,2} |\Z)", re.M | re.
 _PIN = re.compile(r"^ *[-*] +Spec commit *: *`?([0-9a-f]{40})`? *$", re.M)
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_USER_INPUT = re.compile(r'<user_input mode="(?:act|plan|yolo)">(.*)</user_input>', re.S)
 _HUB_TIMEOUT = 5.0
 _MAX_MESSAGE = 16 * 1024 * 1024
 _MAX_QUEUE = 256
+_HUB_LOGGER = logging.Logger("kotekomi.review_wake.hub_transport", level=logging.CRITICAL + 1)
+_HUB_LOGGER.addHandler(logging.NullHandler())
+_HUB_LOGGER.propagate = False
 _TARGET = {
     "status": "unproven",
     "detail": "same_session_delivery_unproven",
@@ -142,6 +147,7 @@ class _Hub:
                 ping_timeout=None,
                 max_size=_MAX_MESSAGE,
                 max_queue=_MAX_QUEUE,
+                logger=_HUB_LOGGER,
             )
         except TimeoutError:
             raise _HubError("hub_unavailable") from None
@@ -264,7 +270,7 @@ class _Hub:
             self.session_id,
             f"kotekomi-history-{comment_id}",
         )
-        rows = _history_rows(payload)
+        rows = _transcript_rows(payload, self.session_id)
         return rows, {"count": len(rows), "sha256": _history_digest(rows)}
 
     def send(self, message: str, comment_id: int, boundary: JsonObject) -> JsonObject:
@@ -278,7 +284,7 @@ class _Hub:
             self.session_id,
             f"kotekomi-receipt-{comment_id}",
         )
-        rows = _history_rows(payload)
+        rows = _transcript_rows(payload, self.session_id)
         count = cast(int, boundary["count"])
         digest = cast(str, boundary["sha256"])
         if len(rows) < count or _history_digest(rows[:count]) != digest:
@@ -307,6 +313,12 @@ class _Hub:
 
     def close(self) -> None:
         self.connection.close()
+
+
+def _transcript_rows(payload: JsonObject, session_id: str) -> list[JsonObject]:
+    if payload.get("sessionId") != session_id:
+        raise _HubError("transcript_identity_unproven")
+    return _history_rows(payload)
 
 
 def _history_rows(payload: JsonObject) -> list[JsonObject]:
@@ -344,21 +356,19 @@ def _history_digest(rows: list[JsonObject]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _message_text(row: JsonObject) -> str:
+def _message_text(row: JsonObject) -> str | None:
     content = row.get("content")
-    if isinstance(content, str):
-        text = content
-    else:
-        parts = cast(list[object], content) if isinstance(content, list) else []
-        values: list[str] = []
-        for part in parts:
-            block = _dict(part)
-            value = block.get("text")
-            if block.get("type") == "text" and isinstance(value, str):
-                values.append(value)
-        text = "\n".join(values)
-    wrapped = re.fullmatch(r"\s*<user_input[^>]*>(.*)</user_input>\s*", text, re.S)
-    return (wrapped.group(1) if wrapped else text).strip()
+    if not isinstance(content, list):
+        return None
+    rows = cast(list[object], content)
+    if len(rows) != 1:
+        return None
+    block = _dict(rows[0])
+    value = block.get("text")
+    if block.get("type") != "text" or not isinstance(value, str):
+        return None
+    wrapped = _USER_INPUT.fullmatch(value)
+    return wrapped.group(1) if wrapped else value
 
 
 def _check(state_path: Path, data: JsonObject, enrollment: JsonObject) -> tuple[int, JsonObject]:
@@ -461,6 +471,35 @@ def _evaluate(
     return _outcome(comment_id, url, "eligible", "authorized_marker")
 
 
+def _fresh_outcome(enrollment: JsonObject, key: str) -> JsonObject:
+    repo, number = str(enrollment["repo"]), cast(int, enrollment["pr"])
+    url = f"https://github.com/{repo}/pull/{number}#issuecomment-{key}"
+    pull = _gh("api", f"repos/{repo}/pulls/{number}")
+    if not isinstance(pull, dict):
+        raise ReviewWakeError("review_wake.github", "/github/pull", "object")
+    pr = cast(JsonObject, pull)
+    if pr.get("state") != "open":
+        return _outcome(int(key), url, "blocked", "pull_request_closed")
+    if pr.get("number") != number:
+        return _outcome(int(key), url, "invalid", "marker_targets_enrollment")
+    head = cast(JsonObject, pr["head"]).get("sha") if isinstance(pr.get("head"), dict) else None
+    body = pr.get("body")
+    section = _HANDOFF.search(body) if isinstance(body, str) else None
+    found = _PIN.findall(section.group(1)) if section is not None else []
+    pin = found[0] if len(found) == 1 else None
+    comment = _gh("api", f"repos/{repo}/issues/comments/{key}")
+    if not isinstance(comment, dict):
+        return _outcome(int(key), url, "invalid", "comment_missing")
+    item = cast(JsonObject, comment)
+    expected = f"https://api.github.com/repos/{repo}/issues/{number}"
+    if item.get("issue_url") != expected:
+        return _outcome(int(key), url, "invalid", "comment_targets_enrollment")
+    outcome = _evaluate(enrollment, item, head, pin)
+    if outcome is None:
+        return _outcome(int(key), url, "invalid", "authorized_marker")
+    return outcome
+
+
 def _deliver(
     state_path: Path, data: JsonObject, enrollment: JsonObject, key: str, outcome: JsonObject
 ) -> JsonObject:
@@ -471,6 +510,9 @@ def _deliver(
     intent = False
     record = outcome
     try:
+        fresh = _fresh_outcome(enrollment, key)
+        if fresh.get("status") != "eligible":
+            return fresh
         hub = _Hub(
             Path(hub_value),
             str(enrollment["checkout"]),
@@ -483,6 +525,14 @@ def _deliver(
         if status not in {"idle", "completed", "aborted"}:
             return {**outcome, "status": "blocked", "detail": "session_binding_unproven"}
         _, boundary = hub.history(int(key))
+        status = hub.status()
+        if status in {"running", "pending"}:
+            return {**outcome, "status": "queued", "detail": "target_busy"}
+        if status not in {"idle", "completed", "aborted"}:
+            return {**outcome, "status": "blocked", "detail": "session_binding_unproven"}
+        fresh = _fresh_outcome(enrollment, key)
+        if fresh.get("status") != "eligible":
+            return fresh
         record = {
             **outcome,
             "history_count": boundary["count"],
@@ -499,6 +549,8 @@ def _deliver(
             "detail": "one_matching_transcript_entry",
             **receipt,
         }
+    except ReviewWakeError:
+        return {**outcome, "status": "queued", "detail": "routing_unavailable"}
     except _HubError as error:
         detail = str(error)
         if intent:
