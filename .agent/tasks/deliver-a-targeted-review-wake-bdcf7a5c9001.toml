@@ -10,7 +10,7 @@ tdd_path = "docs/2026-11-20-deliver-targeted-review-wake.md"
 tdd_sha256 = "bdcf7a5c9001a52355b314d5049edba3ffc3286a2c23941329707d0e0d92ed3b"
 goal = "Deliver a verified review alert to one opted-in local Cline session without guessing or changing approval boundaries."
 depends_on = []
-allowed_paths = [".agent/receipts/",".agent/tasks/deliver-a-targeted-review-wake-bdcf7a5c9001.toml","docs/2026-11-20-deliver-targeted-review-wake.md","docs/2026-11-19-same-branch-delivery-handoff-agile-package.md","packages/devtools/src/kotekomi_devtools/review_wake.py","packages/devtools/src/kotekomi_devtools/cli.py","packages/devtools/tests/test_review_wake.py","docs/agent/implement-tdd-workflow.md","docs/CHECK_PLAN.md","packages/devtools/pyproject.toml","uv.lock"]
+allowed_paths = [".agent/tasks/deliver-a-targeted-review-wake-bdcf7a5c9001.toml","docs/2026-11-20-deliver-targeted-review-wake.md","docs/2026-11-19-same-branch-delivery-handoff-agile-package.md","packages/devtools/src/kotekomi_devtools/review_wake.py","packages/devtools/src/kotekomi_devtools/cli.py","packages/devtools/tests/test_review_wake.py","docs/agent/implement-tdd-workflow.md","docs/CHECK_PLAN.md","packages/devtools/pyproject.toml","uv.lock"]
 reference_paths = ["packages/devtools/src/kotekomi_devtools/pr_handoff.py","docs/agent/long-running-operations.md"]
 stop_conditions = ["The installed Cline cannot safely target the registered session"]
 
