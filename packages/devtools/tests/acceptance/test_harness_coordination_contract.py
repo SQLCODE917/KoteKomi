@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from .test_specification_commit_selection_contract import BRANCH, _cli, _git, _repo
+from .test_specification_commit_selection_contract import BRANCH, PROJECT_ROOT, _cli, _git, _repo
 
 
 def _start(tmp_path: Path, *, production: bool = False) -> tuple[Path, Path, str, str, Path, str]:
@@ -153,7 +154,25 @@ def test_budget_size_is_advisory_but_scope_still_blocks_lifecycle(tmp_path: Path
     source.parent.mkdir(parents=True)
     source.write_text("implementation\n" * 20)
     candidate = _commit(repo)
-    budget = _cli(repo, state, "budget-audit", str(manifest), "--base", spec, "--head", candidate)
+    budget = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--project",
+            str(PROJECT_ROOT),
+            "kotekomi-agent",
+            "budget-audit",
+            str(manifest),
+            "--base",
+            spec,
+            "--head",
+            candidate,
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert budget.returncode == 0, budget.stdout
     assert json.loads(budget.stdout)["status"] == "over_budget"
     result = _cli(
