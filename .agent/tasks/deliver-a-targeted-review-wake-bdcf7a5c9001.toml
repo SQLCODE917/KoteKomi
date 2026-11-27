@@ -1,0 +1,43 @@
+schema_version = 2
+task_id = "deliver-a-targeted-review-wake-bdcf7a5c9001"
+title = "Deliver a Targeted Review Wake"
+status = "ready_for_terra_high"
+series_id = "same-branch-delivery-handoff"
+task_class = "pure-behavior"
+model_profile = "terra-high-v1"
+baseline_revision = "0c69a25b961ddd5cb66bff8df2da5923ada0516e"
+tdd_path = "docs/2026-11-20-deliver-targeted-review-wake.md"
+tdd_sha256 = "bdcf7a5c9001a52355b314d5049edba3ffc3286a2c23941329707d0e0d92ed3b"
+goal = "Deliver a verified review alert to one opted-in local Cline session without guessing or changing approval boundaries."
+depends_on = []
+allowed_paths = [".agent/tasks/deliver-a-targeted-review-wake-bdcf7a5c9001.toml","docs/2026-11-20-deliver-targeted-review-wake.md","docs/2026-11-19-same-branch-delivery-handoff-agile-package.md","packages/devtools/src/kotekomi_devtools/review_wake.py","packages/devtools/src/kotekomi_devtools/cli.py","packages/devtools/tests/test_review_wake.py","docs/agent/implement-tdd-workflow.md","docs/CHECK_PLAN.md","packages/devtools/pyproject.toml","uv.lock"]
+reference_paths = ["packages/devtools/src/kotekomi_devtools/pr_handoff.py","docs/agent/long-running-operations.md"]
+stop_conditions = ["The installed Cline cannot safely target the registered session"]
+
+[readiness]
+authority = "Pinned leaf TDD and PR Current Handoff."
+contract_family = "same-branch-delivery-handoff"
+dominant_outcome = "Deliver a verified review alert to one opted-in local Cline session without guessing or changing approval boundaries."
+failure_policy = "Suppress uncertain or stale delivery, and never select an active task by guess."
+legacy_disposition = "Keep existing pickup, CI closeout and human approvals unchanged."
+negative_proof = "Other PRs, normal comments, duplicates and stale revisions never deliver to a session."
+public_entry_point = "Opt-in foreground review listener for one PR and Cline session."
+scope_policy = "One narrow change as specified in the leaf TDD."
+side_effect_boundary = "Local enrollment and deduplication; fixed alert only to the explicitly enrolled session, no autorun or merge."
+unresolved_decisions = []
+
+[budget]
+maximum_production_files = 2
+maximum_test_files = 1
+maximum_production_diff_lines = 800
+
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-20-deliver-targeted-review-wake.md"
+sha256 = "bdcf7a5c9001a52355b314d5049edba3ffc3286a2c23941329707d0e0d92ed3b"
+
+[[acceptance]]
+id = "targeted-review-wake"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/devtools/tests/test_review_wake.py"]
+timeout_seconds = 480
+profile = "portable-local"

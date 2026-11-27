@@ -87,6 +87,93 @@ Pushing the candidate verification receipt starts closeout; it does not complete
 This exception applies only to the named candidate PR CI run.
 The human-at-terminal workflow and long-running local and model work retain their existing rules.
 
+## Review wake on the same PR
+
+A review wake watches one enrolled PR for a versioned marker comment.
+The listener is a foreground command.
+The Mac must be awake and the listener must be running.
+The listener reads GitHub with the existing `gh` authentication and writes no GitHub state.
+
+Enroll one checkout, its current branch, the PR, the pinned specification commit, and one existing terminal Cline session ID.
+Keep the state file outside the checkout.
+
+```bash
+uv run kotekomi-agent review-wake enroll \
+  --state "$HOME/.local/state/kotekomi/review-wake/pull-11.json" \
+  --checkout "$PWD" \
+  --repo SQLCODE917/KoteKomi \
+  --pr 11 \
+  --branch spec/targeted-review-wake-refresh \
+  --pin <full-lowercase-spec-sha> \
+  --session-id <existing-terminal-cline-session-id> \
+  --hub "$HOME/.local/share/monai/projects/<project-id>/cline/locks/hub/production.json" \
+  --author <trusted-comment-author> \
+  --operator <operator-login> \
+  --harness-run <existing-harness-run-id>
+```
+
+Use `--replace` to rebind the same state file.
+The rebind preserves delivered comment IDs.
+Use `--authorize-shared-account` only when the operator explicitly authorizes a shared-account marker signal.
+Without that flag, a marker whose author equals the operator produces a notification-only alert.
+
+The review comment carries exactly one marker in addition to its human-readable text.
+
+```html
+<!-- kotekomi-review-request:v1 repo=SQLCODE917/KoteKomi pr=11 head=<reviewed-head-sha> pin=<pinned-spec-sha> -->
+```
+
+Run the listener in the foreground and poll every 30 seconds.
+
+```bash
+while true; do
+  uv run kotekomi-agent review-wake check --state "$HOME/.local/state/kotekomi/review-wake/pull-11.json"
+  sleep 30
+done
+```
+
+Each poll prints one JSON object.
+`status: processed` reports actionable `alerts`.
+`status: suppressed` reports a closed PR or a checkout on the wrong branch.
+`status: blocked` reports a GitHub or state read failure.
+The alert `message` is fixed: `New review comment on your current PR: <comment URL>. Please check it.`
+The listener never includes the comment body or command text in the alert.
+
+The listener uses the declared `websockets==16.1` synchronous client with the local Cline Hub's v1 loopback protocol and the token from the enrolled discovery file.
+It validates the negotiated `cline-hub-auth.<token>` subprotocol and fails closed when the selected subprotocol is missing or wrong.
+It verifies the exact session ID, checkout, current branch, and idle status before sending.
+Immediately before transmission it re-fetches the selected comment and PR, rechecks repository/PR membership, open state, current head, canonical pin, and shared-account authorization, and rechecks idle status after history preparation.
+Before transmission it records the ordered message-ID prefix count and digest, then persists send intent.
+It sends only the fixed alert plus the trusted comment link to that enrolled session.
+Both transcript reads must name the enrolled session; a missing or foreign session identity blocks before send or remains unknown after send.
+It sends the input once, then observes events and transcript samples under one 30-second monotonic receipt deadline.
+The `run.started` correlation reads `payload.requestId` and requires the envelope session ID to match.
+It requires the prefix to be unchanged and exactly one new user message with a single exact text block containing the fixed alert, confirmed by a subsequent stable sample.
+Missing evidence is sampled again until the deadline; contradictory identity/history and duplicate receipts fail closed.
+A historical match, assistant echo, tool result or mixed content, malformed wrapper, changed whitespace, changed prefix, or duplicate new alert cannot establish delivery.
+The only accepted transport wrapper is `<user_input mode="act|plan|yolo">...</user_input>` around the entire exact alert.
+A dedicated non-propagating transport logger suppresses library handshake records so tokens cannot reach DEBUG output.
+A busy or unavailable target is queued and revalidated on a later poll.
+An unproven session binding or unverifiable history is blocked, and an unconfirmed or ambiguous send becomes `unknown` without a blind retry.
+Delivered, notified, blocked, unknown, and failed records are never replayed after restart.
+The token stays in the discovery file; it is never passed as an argument or printed.
+The listener does not spawn a task, press approvals, or change sandbox settings.
+The enrollment records the existing Harness run ID.
+The listener creates no second implementation lifecycle.
+
+The state file holds the enrollment and one record per marker comment ID.
+Restart the same command to resume.
+A delivered or notified comment is not replayed.
+A `sending` record becomes `unknown` and is not retried.
+Stop the listener with Ctrl-C.
+
+Use this command to inspect the retained alerts.
+
+```bash
+python3 -c 'import json,sys;print(json.dumps(json.load(open(sys.argv[1]))["alerts"],indent=2,sort_keys=True))' \
+  "$HOME/.local/state/kotekomi/review-wake/pull-11.json"
+```
+
 ## Start from one PR URL
 
 Use this path when the handoff is a PR description and the branch is already fetched.

@@ -40,6 +40,7 @@ from kotekomi_devtools.pr_handoff import preflight_handoff
 from kotekomi_devtools.receipt_chain_status import run_receipt_chain_status_command
 from kotekomi_devtools.receipt_writer import ReceiptWriterError, write_receipt
 from kotekomi_devtools.retrieval_scenarios import RetrievalScenarioError, test_ingest, test_query
+from kotekomi_devtools.review_wake import review_wake
 from kotekomi_devtools.step_scripts import (
     StepScriptError,
     record_step_failure,
@@ -133,6 +134,7 @@ def _dispatch_command(arguments: argparse.Namespace) -> CliResponse | int:
         "record-step-failure": _handle_step_command,
         "receipt-chain-status": _handle_receipt_command,
         "handoff-preflight": _handle_handoff_command,
+        "review-wake": _handle_review_wake_command,
         "write-receipt": _handle_receipt_command,
         "tdd-bind": _handle_tdd_command,
         "evidence-index": _handle_tdd_command,
@@ -271,6 +273,12 @@ def _handle_step_command(arguments: argparse.Namespace) -> CliResponse:
 
 def _handle_handoff_command(arguments: argparse.Namespace) -> CliResponse:
     code, output = preflight_handoff(arguments.description)
+    return CliResponse(code, output)
+
+
+def _handle_review_wake_command(arguments: argparse.Namespace) -> CliResponse:
+    values = vars(arguments)
+    code, output = review_wake(values.pop("action"), values.pop("state"), **values)
     return CliResponse(code, output)
 
 
@@ -672,6 +680,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Check one PR Current Handoff against the current checkout.",
     )
     handoff.add_argument("description", type=Path)
+    rw = subparsers.add_parser("review-wake", help="Enroll or check a review wake.")
+    rw.add_argument("action", choices=("enroll", "check"))
+    rw.add_argument("--state", type=Path, required=True)
+    rw.add_argument("--checkout", type=Path)
+    rw.add_argument("--repo")
+    rw.add_argument("--pr", type=int)
+    rw.add_argument("--branch")
+    rw.add_argument("--pin")
+    rw.add_argument("--session-id")
+    rw.add_argument("--hub", type=Path)
+    rw.add_argument("--author")
+    rw.add_argument("--operator")
+    rw.add_argument("--authorize-shared-account", action="store_true")
+    rw.add_argument("--harness-run")
+    rw.add_argument("--replace", action="store_true")
     receipt_chain_status = subparsers.add_parser(
         "receipt-chain-status",
         help="Report deterministic receipt-chain status.",

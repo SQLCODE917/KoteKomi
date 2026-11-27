@@ -757,10 +757,14 @@ version = "0.1.0"
 source = { editable = "packages/devtools" }
 dependencies = [
     { name = "jsonschema" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "jsonschema", specifier = ">=4.24,<5" }]
+requires-dist = [
+    { name = "jsonschema", specifier = ">=4.24,<5" },
+    { name = "websockets", specifier = "==16.1" },
+]
 
 [[package]]
 name = "kotekomi-domain"

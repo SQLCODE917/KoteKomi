@@ -70,6 +70,10 @@ Pass if no one has to relay or reinterpret the handoff outside the PR. If the ag
 - **Synthesize:** The terminal signal describes what this live operation achieved; it does not change what the Ledger records as captured. Use an explicit state root to prove retention. Do not expand this into recovery, retry, or new Ledger state.
 - **Measure:** Target zero prompts asking the implementer to close out. Record an ordinary review wake or a wake to resume CI as separate events, and state explicitly if the session could not wait. Verify source behavior and delivery separately. The operator still decides to merge.
 
+### Review wake: targeted local pilot
+
+[Leaf TDD](2026-11-20-deliver-targeted-review-wake.md). PR #6 eliminated the separate closeout prompt, but required a review wake. Address only that wake first. Treat GitHub as the durable inbox and target one registered Cline session; do not treat VS Code's current task as an identity. A scoped alert or dry run is not proof that the agent can resume.
+
 ### Handoff-03: Make pickup event-driven (conditional)
 
 Start only after Handoff-02 is repeatable without human translation. Use one explicit, authorized ready event; re-read the PR and run preflight before dispatch. One implementation attempt per repository, PR, and spec SHA; duplicate delivery is harmless. Ordinary pushes and bot replies don't trigger another start. A replacement pin must not race an active run. The implementer reports to the same PR and has no merge authority. Defer routing, cross-repo support, and any custom scheduler.
