@@ -268,6 +268,63 @@ def test_source_quotations_preserve_paragraphs_and_line_breaks(
     assert citations["citations"][0]["exact_text"] == source
 
 
+def test_navigation_details_render_relative_links_to_emitted_pages() -> None:
+    plan = _plan()
+    record = plan.pages[0]
+    document_path = "documents/Quarterly_Report_Final_.pdf.md"
+    home = WikiPageInput(
+        relative_path="index.md",
+        page_kind="home",
+        record_id=None,
+        display_label="Candidate Wiki",
+        state=None,
+        details=(
+            WikiDetail(
+                "Document",
+                "Quarterly Report (Final).pdf",
+                relative_path=document_path,
+            ),
+        ),
+        links=(),
+        presentations=(),
+        citation_numbers=(),
+        input_fingerprint="c" * 64,
+    )
+    document = WikiPageInput(
+        relative_path=document_path,
+        page_kind="document",
+        record_id="doc_example",
+        display_label="Quarterly Report (Final).pdf",
+        state="accepted",
+        details=(WikiDetail("Index", "Candidate Wiki", relative_path="index.md"),),
+        links=(),
+        presentations=record.presentations,
+        citation_numbers=record.citation_numbers,
+        input_fingerprint="d" * 64,
+    )
+    record = replace(
+        record,
+        details=(
+            WikiDetail("Index", "Candidate Wiki", relative_path="index.md"),
+            WikiDetail(
+                "Document",
+                "Quarterly Report (Final).pdf",
+                relative_path=document_path,
+            ),
+        ),
+    )
+    rendered = MarkdownCandidateWikiRenderer().render(replace(plan, pages=(home, document, record)))
+    files = {item.relative_path: item.payload.decode() for item in rendered.files}
+    assert f"[Quarterly Report (Final).pdf]({document_path})" in files["index.md"]
+    assert "[Candidate Wiki](../index.md)" in files[document_path]
+    assert "[Candidate Wiki](../index.md)" in files["actors/Amodei.md"]
+    assert f"[Quarterly Report (Final).pdf](../{document_path})" in files["actors/Amodei.md"]
+    parsed_home = MarkdownIt("commonmark").render(
+        re.sub(r"\A---\n.*?\n---\n", "", files["index.md"], flags=re.S)
+    )
+    assert f'href="{document_path}"' in parsed_home
+
+
 def _plan() -> CandidateWikiPlan:
     evidence = WikiEvidenceReference(
         citation_number=1,

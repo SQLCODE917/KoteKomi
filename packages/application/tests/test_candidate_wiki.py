@@ -214,6 +214,33 @@ def test_candidate_view_preserves_review_state_closes_references_and_plans_pages
     assert "created_at" not in pending_org.source_payload_json
 
 
+def test_candidate_wiki_plan_links_index_document_and_record_pages() -> None:
+    ledger = FakeCandidateWikiLedger()
+    display_filename = "Quarterly Report (Final).pdf"
+    ledger.run = ledger.run.model_copy(
+        update={
+            "display_filename": display_filename,
+            "requested_path": f"/input/{display_filename}",
+        }
+    )
+    plan = plan_candidate_wiki(build_candidate_knowledge_view(ledger.run, ledger))
+
+    index_page = next(page for page in plan.pages if page.page_kind == "home")
+    document_page = next(page for page in plan.pages if page.page_kind == "document")
+    record_pages = tuple(page for page in plan.pages if page.page_kind not in {"home", "document"})
+    assert document_page.relative_path == ("documents/Quarterly_Report_Final_.pdf.md")
+    assert {detail.label: detail.relative_path for detail in index_page.details}[
+        "Document"
+    ] == document_page.relative_path
+    assert {detail.label: detail.relative_path for detail in document_page.details}[
+        "Index"
+    ] == "index.md"
+    for page in record_pages:
+        navigation = {detail.label: detail.relative_path for detail in page.details}
+        assert navigation["Index"] == "index.md"
+        assert navigation["Document"] == document_page.relative_path
+
+
 def test_candidate_view_fails_when_proposal_evidence_does_not_replay() -> None:
     ledger = FakeCandidateWikiLedger()
     proposal = ledger.proposals["pcg_org"]
