@@ -314,6 +314,10 @@ def _markdown_text(value: str) -> str:
         .replace("[", "\\[")
         .replace("]", "\\]")
         .replace("|", "\\|")
+        .replace("*", "\\*")
+        .replace("_", "\\_")
+        .replace("`", "\\`")
+        .replace("~", "\\~")
         .replace("\n", " ")
     )
 

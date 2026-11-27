@@ -11,6 +11,7 @@ dependencies = [
 dev = [
   "jsonschema>=4.24,<5",
   "kotekomi-devtools",
+  "markdown-it-py>=4.2,<5",
   "pyright>=1.1.400,<2",
   "pytest>=8.4,<9",
   "ruff>=0.12,<1",
