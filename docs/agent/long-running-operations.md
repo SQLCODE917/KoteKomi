@@ -81,3 +81,16 @@ Use `kotekomi model runs --ingestion-run <run-id> --format json` for model diagn
 Use `kotekomi extraction traces --ingestion-run <run-id> --format jsonl` for exact stage traces.
 
 Report a pushed branch and commit instead of polling CI, except for the one bounded [candidate closeout wait](implement-tdd-workflow.md#candidate-closeout-on-the-same-pr) explicitly allowed for an implementing agent with a checkout.
+
+## Authorized job runner
+
+The operator can authorize a deterministic job runner to execute a long command.
+The runner uses the caller's existing permissions and enforces a bounded deadline.
+The runner retains command arguments, candidate revision, logs, exit status, and completion evidence.
+The agent submits the job once, ends its turn, and resumes from its completion report.
+The agent does not poll or automatically replay uncertain jobs.
+The project requires no specific runner or Spymaster dependency.
+A caller can still use the human-started workflow above.
+For Harness work, use the generated verification plan, `run-check`, and `verify-checks` inside the job.
+For CI, the same runner can perform the single bounded candidate wait already defined by the workflow.
+The closeout command still verifies the exact PR head and successful required jobs.

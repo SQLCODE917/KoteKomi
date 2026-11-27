@@ -234,10 +234,11 @@ def _candidate_diagnostics(
         if _ignored_scope_diagnostic(diagnostic.code, diagnostic.location, scope, frozen_paths):
             continue
         diagnostics.append(diagnostic.as_json())
+    # Size estimates remain visible through budget-audit; scope stays a hard gate.
     diagnostics.extend(
         diagnostic.as_json()
         for diagnostic in budget.diagnostics
-        if diagnostic.code == "task_budget.budget_violation"
+        if diagnostic.code.startswith("task_manifest.")
     )
     return tuple(sorted(diagnostics, key=_diagnostic_key))
 
