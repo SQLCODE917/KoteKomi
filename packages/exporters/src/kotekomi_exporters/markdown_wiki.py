@@ -187,7 +187,7 @@ def _at_a_glance(
             lines.append(f"  - **Review issue:** {_markdown_text(issue)}")
         for evidence in _event_evidence(event, evidence_by_number):
             lines.append(f"  - **{_source_label(evidence.page_numbers)}:**")
-            lines.append(f"    > {_markdown_text(evidence.exact_text)}")
+            lines.extend(_quote_lines(evidence.exact_text, "    "))
     return [*lines, ""]
 
 
@@ -262,7 +262,7 @@ def _relationships(
                 presentation.citation_numbers, evidence_by_number
             ):
                 lines.append(f"  - **{_exact_source_label(evidence.page_numbers)}:**")
-                lines.append(f"    > {_markdown_text(evidence.exact_text)}")
+                lines.extend(_quote_lines(evidence.exact_text, "    "))
         lines.append("")
     return lines
 
@@ -320,6 +320,39 @@ def _markdown_text(value: str) -> str:
         .replace("~", "\\~")
         .replace("\n", " ")
     )
+
+
+def _quote_lines(value: str, indent: str) -> list[str]:
+    parts = value.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines: list[str] = []
+    for index, part in enumerate(parts):
+        if not part.strip():
+            lines.append(f"{indent}>")
+            continue
+        escaped = _escape_block_start(_protect_leading_whitespace(part))
+        if index + 1 < len(parts) and parts[index + 1].strip():
+            escaped += "  "
+        lines.append(f"{indent}> {escaped}")
+    return lines
+
+
+def _protect_leading_whitespace(value: str) -> str:
+    stripped = value.lstrip(" \t")
+    prefix = value[: len(value) - len(stripped)]
+    encoded = "".join("&#9;" if character == "\t" else "&#32;" for character in prefix)
+    return f"{encoded}{_markdown_text(stripped)}"
+
+
+def _escape_block_start(value: str) -> str:
+    if value.startswith(("#", "-", "+", "=")):
+        return f"\\{value}"
+    for index, character in enumerate(value):
+        if character.isdigit():
+            continue
+        if character in ".)" and index > 0 and value[:index].isdigit():
+            return f"{value[:index]}\\{value[index:]}"
+        break
+    return value
 
 
 def _code_text(value: str) -> str:
