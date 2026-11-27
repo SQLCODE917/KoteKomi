@@ -17,6 +17,8 @@ Use the selected ingestion's stored completion time, not the current clock, buil
 Display its identity and a clearly labeled completion timestamp on the index and Document page.
 Use an unambiguous timezone-bearing timestamp; equivalent timezone representations must identify the same instant.
 If existing eligible records can omit completion time, display its absence honestly without changing eligibility.
+The current eligible-record contract requires a completion timestamp; display `Unavailable` when it is absent or lacks timezone information.
+Normalize displayed completion instants to UTC with a trailing `Z`.
 Keep filename-only and explicit selection, navigation, quotations, and structured audit/citation meaning intact.
 Changed output must publish successfully over a pre-feature build for the same ingestion while preserving that build.
 A repeated unchanged build reuses its output; builds perform no inference and leave Ledger contents unchanged.
