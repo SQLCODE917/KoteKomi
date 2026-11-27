@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import cast
 
 import pytest
@@ -238,6 +238,31 @@ def test_candidate_wiki_plan_links_index_document_and_record_pages() -> None:
         navigation = {detail.label: detail.relative_path for detail in page.details}
         assert navigation["Index"] == "index.md"
         assert navigation["Document"] == document_page.relative_path
+
+
+def test_candidate_wiki_plan_displays_ingestion_identity_and_completion() -> None:
+    ledger = FakeCandidateWikiLedger()
+    plan = plan_candidate_wiki(build_candidate_knowledge_view(ledger.run, ledger))
+    index_page = next(page for page in plan.pages if page.page_kind == "home")
+    document_page = next(page for page in plan.pages if page.page_kind == "document")
+
+    for page in (index_page, document_page):
+        details = {detail.label: detail.value for detail in page.details}
+        assert details["Ingestion run"] == "igr_example"
+        assert details["Ingestion completed"] == "2026-09-04T00:00:00Z"
+
+    shifted = ledger.run.model_copy(
+        update={"completed_at": datetime(2026, 9, 4, 2, tzinfo=timezone(timedelta(hours=2)))}
+    )
+    shifted_ledger = FakeCandidateWikiLedger()
+    shifted_ledger.run = shifted
+    shifted_plan = plan_candidate_wiki(
+        build_candidate_knowledge_view(shifted_ledger.run, shifted_ledger)
+    )
+    shifted_page = next(page for page in shifted_plan.pages if page.page_kind == "document")
+    assert {detail.label: detail.value for detail in shifted_page.details}[
+        "Ingestion completed"
+    ] == "2026-09-04T00:00:00Z"
 
 
 def test_candidate_view_fails_when_proposal_evidence_does_not_replay() -> None:

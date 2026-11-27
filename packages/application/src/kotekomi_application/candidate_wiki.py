@@ -8,6 +8,7 @@ import re
 import unicodedata
 from collections import Counter, deque
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import PurePosixPath
 from typing import Literal, Protocol, Self, cast
 
@@ -39,7 +40,7 @@ from kotekomi_application.evidence_targets import verify_evidence_target
 from kotekomi_application.record_serialization import canonical_record_json
 
 CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v5"
-CANDIDATE_WIKI_RENDERER_POLICY_ID = "source_grounded_markdown_wiki_v9"
+CANDIDATE_WIKI_RENDERER_POLICY_ID = "source_grounded_markdown_wiki_v10"
 HASH_ID_LENGTH = 24
 
 type WikiIntelligenceRecord = (
@@ -730,6 +731,11 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
                     view.ingestion_run.display_filename,
                     relative_path=document_path,
                 ),
+                WikiDetail("Ingestion run", view.ingestion_run.id),
+                WikiDetail(
+                    "Ingestion completed",
+                    _ingestion_completion_label(view.ingestion_run),
+                ),
                 WikiDetail("Source", view.ingestion_run.normalized_source_url or "Unavailable"),
                 WikiDetail("Candidate records", str(len(view.records))),
             ),
@@ -748,6 +754,11 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             state="accepted",
             details=(
                 WikiDetail("Index", "Candidate Wiki", relative_path="index.md"),
+                WikiDetail("Ingestion run", view.ingestion_run.id),
+                WikiDetail(
+                    "Ingestion completed",
+                    _ingestion_completion_label(view.ingestion_run),
+                ),
                 WikiDetail("Source URL", view.ingestion_run.normalized_source_url or "Unavailable"),
                 WikiDetail("Content SHA-256", view.document.content_sha256),
             ),
@@ -2135,6 +2146,13 @@ def _json_object(value: str) -> dict[str, JsonValue]:
     if not isinstance(parsed, dict):
         raise ValueError("Candidate Wiki record payload must be one JSON object.")
     return cast(dict[str, JsonValue], parsed)
+
+
+def _ingestion_completion_label(run: IngestionRun) -> str:
+    completed = run.completed_at
+    if completed is None or completed.tzinfo is None:
+        return "Unavailable"
+    return completed.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _sha256_json(value: object) -> str:

@@ -47,7 +47,7 @@ def test_archive_publishes_new_renderer_policy_for_the_same_view(
 ) -> None:
     from kotekomi_application.candidate_wiki import CANDIDATE_WIKI_RENDERER_POLICY_ID
 
-    previous_version = "source_grounded_markdown_wiki_v8"
+    previous_version = "source_grounded_markdown_wiki_v9"
     previous = _rendered(
         "previous output",
         renderer_policy_id=previous_version,
