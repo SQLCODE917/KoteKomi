@@ -1,0 +1,39 @@
+schema_version = 2
+task_id = "reduce-harness-coordination-2f126145950b"
+title = "Reduce Harness Coordination"
+status = "ready_for_terra_high"
+series_id = "reduce-coordination-overhead"
+task_class = "repository-tooling"
+model_profile = "terra-high-v1"
+baseline_revision = "3806f49d1dd3dc151730aa1a3c5ef6229136331c"
+tdd_path = "docs/2026-11-27-reduce-harness-coordination.md"
+tdd_sha256 = "2f126145950bcc0b6280f104120e91d261e501231adeab3a5dbe702399074342"
+goal = "Continue bounded tasks with advisory budgets and same-run amendments."
+depends_on = []
+allowed_paths = ["packages/devtools/src/kotekomi_devtools/task_budget.py", "packages/devtools/src/kotekomi_devtools/task_lifecycle.py", "packages/devtools/src/kotekomi_devtools/tdd_workflow.py", "packages/devtools/src/kotekomi_devtools/cli.py", "packages/devtools/tests/acceptance/test_task_budget_audit_contract.py", "packages/devtools/tests/acceptance/test_harness_coordination_contract.py", "docs/agent/implement-tdd-workflow.md", "docs/agent/long-running-operations.md", "docs/CHECK_PLAN.md", "AGENTS.md", "docs/2026-11-27-reduce-harness-coordination.md", ".agent/tasks/reduce-harness-coordination-2f126145950b.toml"]
+reference_paths = []
+stop_conditions = ["Accepted behavior or verification requirements need to change"]
+[readiness]
+authority = "Pinned TDD"
+contract_family = "harness-coordination"
+dominant_outcome = "Same-task progress with current evidence"
+failure_policy = "Reject changes outside the bounded amendment contract"
+legacy_disposition = "Size excess becomes advisory"
+negative_proof = "Changed acceptance and protected content fail"
+public_entry_point = "kotekomi-agent implement-tdd"
+scope_policy = "Harness coordination only"
+side_effect_boundary = "Local run evidence"
+unresolved_decisions = []
+[budget]
+maximum_production_files = 4
+maximum_test_files = 2
+maximum_production_diff_lines = 500
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-27-reduce-harness-coordination.md"
+sha256 = "2f126145950bcc0b6280f104120e91d261e501231adeab3a5dbe702399074342"
+[[acceptance]]
+id = "harness-coordination"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/devtools/tests/acceptance/test_harness_coordination_contract.py","packages/devtools/tests/acceptance/test_task_budget_audit_contract.py","packages/devtools/tests/acceptance/test_task_lifecycle_contract.py","packages/devtools/tests/acceptance/test_specification_commit_selection_contract.py"]
+timeout_seconds = 600
+profile = "portable-local"
