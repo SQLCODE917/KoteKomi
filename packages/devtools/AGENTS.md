@@ -14,11 +14,13 @@ Before changing this package, read:
 
 1. Root `AGENTS.md`.
 2. This file.
-3. The accepted Leaf TDD named by the task manifest.
-4. The protected JSON Schema named by the Leaf TDD.
-5. `docs/2026-07-14-terra-high-harness-series-plan.md`.
-6. `docs/agent/testing.md`.
-7. `docs/CHECK_PLAN.md` before reporting candidate completion.
+3. The active Agile package and the public contracts changed by this task.
+4. `docs/agent/testing.md`.
+5. `docs/CHECK_PLAN.md` before requesting review.
+
+Ordinary devtools PRs follow `docs/agent/implement-tdd-workflow.md`.
+Existing Harness commands are tools under test, not prerequisites for working on this package.
+For maintenance of a historical Harness contract, read its TDD and schema as the behavior being tested.
 
 ## Package Boundary
 
@@ -36,15 +38,10 @@ The package can use Python standard-library modules and explicitly declared harn
 
 ## Contract Authority
 
-The accepted Leaf TDD owns public behavior.
-
-The protected JSON Schema owns Task Manifest shape.
-
-Protected acceptance tests own black-box examples.
-
-The implementation agent cannot edit a protected artifact.
-
-Report a specification gap when protected authorities conflict.
+The active Agile package states intended behavior and any changes to earlier contracts.
+Update schemas, examples, tests, and documentation together when a public contract changes.
+Existing regression tests remain useful evidence; do not weaken them to hide a failure.
+Product or public-contract decisions beyond the agreed outcome go to the operator.
 
 ## CLI Rules
 
@@ -80,7 +77,7 @@ Later leaves can add those behaviors only through accepted contracts.
 
 ## Test Rules
 
-Protected acceptance tests are read-only.
+Update acceptance tests when an authorized contract changes; retain coverage of unchanged behavior.
 
 Add implementation-focused unit tests under `packages/devtools/tests/unit/`.
 
@@ -90,52 +87,13 @@ Use temporary directories and disposable repositories for later Git-facing leave
 
 Do not require network access in package tests.
 
-## Verification Planning
+## Verification
 
-Before implementation and before candidate verification, run `kotekomi-agent verification-plan`.
-Run every required check it returns. Do not manually infer, omit, or replace returned checks.
-
-## H1 Implementation Scope
-
-The H1 task manifest defines the exact allowed paths.
-
-Do not change the Leaf TDD, task manifest, JSON Schema, this file, acceptance tests, or fixture inputs.
-
-The implementer can report candidate completion only.
-
-Independent verification determines whether H1 is complete.
-## Verification Execution
-
-Run verification-plan.
-Run every required check through run-check.
-Run verify-checks to prove every required check succeeded.
-Do not manually infer, omit, or replace checks.
-
-## Candidate lifecycle gate
-
-Candidate lifecycle is an early gate. After creating the candidate commit, run
-`kotekomi-agent lifecycle-check` with `--phase candidate` before dogfood
-verification execution, before candidate CI, and before any main merge work.
-
-## Generated local step scripts
-
-Generated local dogfood scripts must use deterministic harness commands for
-step preflight, failed-candidate recovery, and failed-step recording. Do not
-encode bespoke branch-reset or failure-record policies in one-off scripts
-when the harness command can own that state transition.
-
-## CLI dispatch edits
-
-When CLI dispatch or delimiter handling changes, rely on `verification-plan`
-to require the CLI delimiter regression contract. Do not omit or replace the
-generated delimiter check with a manually chosen success-only smoke test.
-
-## Verification-plan coverage edits
-
-When harness-owned devtools paths are changed, rely on `verification-plan`
-to select the matching deterministic coverage checks. Do not replace the
-generated plan with broad local full-suite pytest or hand-picked smoke
-tests, and keep unknown changed paths fail-closed.
+Run focused unit and public CLI contract tests for the changed commands.
+CLI dispatch changes must exercise delimiter and failure cases, not only a success smoke test.
+Verification-plan changes must exercise its selection and unknown-path behavior through the existing contract tests.
+Then run the normal fast checks and use full PR CI as the merge gate.
+No task manifest, Harness run, lifecycle gate, or independent receipt is required to develop devtools.
 
 ## Receipt-chain status edits
 
