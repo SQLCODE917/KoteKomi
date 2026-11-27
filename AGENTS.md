@@ -31,47 +31,25 @@ Before changing code, read:
 4. `docs/2026-07-08-KoteKomi.md`.
 5. `docs/CHECK_PLAN.md` before finishing the task.
 
-## Cost-Saving Measures
+## Development Workflow
 
-Treat a task as long-running when it can exceed 60 seconds or depends on an external runtime.
+Use [Implementing a TDD](docs/agent/implement-tdd-workflow.md) for ordinary PR work.
+The Agile package evolves with code on the same branch.
+Its explicit behavior changes supersede earlier TDD requirements for that behavior.
+Workflow documents and historical Harness TDDs do not impose task/run bookkeeping on ordinary development.
+Ask the operator for changes to the promised outcome; review ordinary package corrections in the PR.
 
-Run cheap, focused checks directly.
+Run focused checks directly.
+An authorized deterministic runner can execute long checks and notify the existing conversation on completion.
+End the agent turn while waiting; do not poll from model turns.
+Without a runner, hand long commands to the operator under [Long-Running Operations](docs/agent/long-running-operations.md).
+Use full PR CI as the full-suite merge gate and retain its GitHub result.
+Do not repeat the suite to create an independent receipt.
 
-For long-running local work, provide the human with:
-
-- the exact command;
-- the expected output paths;
-- a deterministic completion-probe command;
-- the success criteria.
-
-The human starts and monitors the command.
-An explicitly authorized deterministic job runner can start and monitor it under [Long-Running Operations](docs/agent/long-running-operations.md#authorized-job-runner).
-
-Inspect its durable records after the human reports completion.
-
-When the user authorizes a CI push, push and report the branch and commit.
-
-The human monitors CI and reports its terminal result.
-
-Do not poll a long-running local process, deployment, model invocation, or CI run.
-
-A checked-out implementing agent may use the one bounded candidate CI wait defined in [Implementing a TDD](docs/agent/implement-tdd-workflow.md#candidate-closeout-on-the-same-pr). This exception does not apply to other operations or to the human-at-terminal workflow.
-
-User-visible long operations must leave typed Ledger records or validated Archive records.
-
-Do not require every internal function to persist a separate diagnostic record.
-
-Create a deterministic function when three real workflows need the same operation.
-
-Do not create speculative helpers only to satisfy the rule of three.
-
-Keep deterministic functions narrow, composable, and independent of their callers.
-
-Use disposable scripts only to compose stable deterministic functions.
-
-Prefer bounded summaries and explicit IDs over sending large logs through model context.
-
-Use the repository's typed observability commands before inspecting raw files or database rows.
+Product operations still retain their declared Ledger and Archive evidence.
+Development check logs do not need a new product record or lifecycle record.
+Use existing typed product inspection commands for product state.
+Create a shared helper when real callers need it, not to anticipate hypothetical workflows.
 
 ## Task Routing
 
@@ -88,7 +66,7 @@ Use the repository's typed observability commands before inspecting raw files or
 | changing Briefing output | `docs/agent/domain.md`, `docs/agent/pipelines.md`, `docs/agent/output-format.md`, `docs/agent/testing.md` |
 | changing exporters | `docs/agent/adapters.md`, `docs/agent/domain.md`, `docs/agent/testing.md` |
 | changing tests | `docs/agent/testing.md` |
-| implementing a TDD | `docs/agent/testing.md` |
+| implementing a TDD | `docs/agent/implement-tdd-workflow.md`, `docs/agent/testing.md` |
 | capability work, Pipeline changes, experiments, or Agile packages | `docs/agent/pipeline-improvement.md` |
 | diagnosing PDF authoritative text | `docs/agent/pdf-authoritative-text-fidelity.md`, `docs/agent/adapters.md`, `docs/agent/testing.md` |
 | long work, CI handoff, or post-run inspection | `docs/agent/long-running-operations.md` |

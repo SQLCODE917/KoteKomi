@@ -1,5 +1,9 @@
 # KoteKomi Check Plan
 
+Ordinary PR work runs focused tests while editing and `./scripts/verify.sh fast` before review.
+Full PR CI runs the complete suite; a second local full run or independent receipt is not required.
+Use the checks below when they exercise the changed behavior.
+
 Canonical full verification entry point: run `./scripts/verify.sh` from the
 repository root. This single script is what CI (`.github/workflows/ci.yml`)
 invokes, and it runs the complete gate — JSON Schema generation, the
