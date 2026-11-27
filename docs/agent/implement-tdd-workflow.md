@@ -5,14 +5,14 @@
 The PR and its branch are the unit of work.
 Read its Agile package, current discussion, and the package-level instructions before editing.
 Check the assigned branch before writing and keep one writer per checkout.
-The implementing agent owns code, tests, package corrections, and a concise review request.
-The reviewer inspects the diff and existing check results.
+The implementing agent owns discovery, implementation choices, code, tests, package corrections, and a concise review request.
+The reviewer challenges the observable result, preserved owners, and evidence at the changed boundaries.
 The operator decides product tradeoffs, accepts UAT, and merges.
 
-Update the package on the same branch when implementation reveals an ordinary correction.
-Explain meaningful changes in the review request.
-Ask the operator when the promised outcome changes or a product decision is needed.
-Do not weaken acceptance criteria merely to make failing code pass.
+The Agile package owns the authorized outcome and scope.
+The active TDD states binding contracts: observable behavior, decision ownership, authorization, identity, and required bounds.
+Private decomposition, intermediate representations, work order, and fixture arrangement are proposals unless a stated contract requires them.
+The operator decides changes to the promised outcome and binding contracts; implementation choices remain with the implementing agent.
 Git history preserves earlier specifications and implementations.
 
 Routine work needs no Task Manifest, specification pin, Harness run, amendment command, receipt commit, promotion record, or scorecard.
@@ -20,9 +20,28 @@ Older Harness commands and their historical evidence are not prerequisites for t
 Older TDD workflow requirements are superseded by this guide; their product behavior and regression tests remain useful.
 Do not run two orchestration listeners against the same agent conversation.
 
+## Understand and adapt
+
+Trace one representative operation from the operator action through the visible result and finalization.
+Distinguish runtime flow, decision ownership, and state lifecycle: what executes, who decides, and what persists or needs cleanup?
+Follow state read outside the returned value and the callers that finalize the operation.
+Challenge the proposed change with a variation that could invalidate it, such as existing output, a failed write, or cancellation.
+Expand the investigation only when it could change the implementation decision or required evidence.
+Stop when the affected owners, contracts, and next safe implementation step are clear; keep consequential unknowns explicit.
+No separate codebase map or investigation report is required.
+
+When evidence contradicts a proposal, trace the affected boundary and make the smallest contract-preserving correction.
+Update the owning design section on the same branch, cite the source or test behind the correction, and continue.
+Correcting an inaccurate assumption does not authorize changing existing behavior or weakening acceptance criteria.
+A different private design, another affected module, or a missing fixture is not by itself a reason to stop.
+Ask the operator when a discovery requires changing authorized scope, promised behavior, decision ownership, permissions, or another binding contract.
+Also ask when unresolved ambiguity prevents a safe in-scope next step; continue independent authorized work meanwhile.
+Do not introduce a duplicate implementation or broken intermediate step solely to preserve the proposed work order.
+
 ## Implement and verify
 
-Capture a failing regression or a concrete before-example for the intended behavior.
+Use [Testing Rules](testing.md#evidence-at-the-changed-boundary) to select evidence for the promised behavior.
+Capture a failing regression for a defect or a concrete before-example for an enhancement.
 Run focused tests during editing.
 Run `./scripts/verify.sh fast` before submitting a candidate.
 Use the additional checks in [Check Plan](../CHECK_PLAN.md) that exercise the changed behavior.
@@ -53,5 +72,8 @@ GitHub retains CI evidence; do not copy it into a second lifecycle store.
 ## UAT and completion
 
 After code approval and successful required checks, provide concrete UAT steps and mark the PR ready for review.
+State what the evidence establishes and what remains unverified against the promised outcome.
+Preparation for that outcome is not completion; a documented prerequisite suffices only when the package promises that decision scope.
+Do not add future features or unrelated verification obligations to close the current slice.
 The operator's UAT acceptance and merge close the work.
 No separate completion ledger is required.
