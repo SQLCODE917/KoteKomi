@@ -482,13 +482,7 @@ def select_candidate_ingestions(
     filename: str, ledger: CandidateWikiLedger
 ) -> CandidateIngestionSelection:
     """Return closed captured runs for one exact display filename, newest first."""
-    if (
-        not filename
-        or "/" in filename
-        or "\\" in filename
-        or filename != PurePosixPath(filename).name
-    ):
-        raise ValueError("Candidate Wiki filename must be one exact filename basename.")
+    _validate_candidate_filename(filename)
     matches = tuple(
         sorted(
             (
@@ -505,6 +499,36 @@ def select_candidate_ingestions(
     if not matches:
         raise ValueError(f"No closed ingestion found for filename: {filename}")
     return CandidateIngestionSelection(matches)
+
+
+def select_candidate_ingestion(
+    filename: str, ingestion_run_id: str, ledger: CandidateWikiLedger
+) -> IngestionRun:
+    """Select one named eligible ingestion without interactive choice."""
+    _validate_candidate_filename(filename)
+    if not ingestion_run_id or ingestion_run_id.strip() != ingestion_run_id:
+        raise ValueError("Candidate Wiki ingestion run ID must be one exact non-empty value.")
+    run = next(
+        (item for item in ledger.list_ingestion_runs() if item.id == ingestion_run_id),
+        None,
+    )
+    if run is None:
+        raise ValueError(f"Unknown ingestion run: {ingestion_run_id}")
+    if run.display_filename != filename:
+        raise ValueError(f"Ingestion run {ingestion_run_id} does not match filename: {filename}")
+    if run.status is not IngestionRunStatus.CAPTURED or run.ingestion_change_set_id is None:
+        raise ValueError(f"Ingestion run {ingestion_run_id} is not eligible for Candidate Wiki.")
+    return run
+
+
+def _validate_candidate_filename(filename: str) -> None:
+    if (
+        not filename
+        or "/" in filename
+        or "\\" in filename
+        or filename != PurePosixPath(filename).name
+    ):
+        raise ValueError("Candidate Wiki filename must be one exact filename basename.")
 
 
 def build_candidate_knowledge_view(

@@ -37,7 +37,8 @@ Use [Implementing a TDD](docs/agent/implement-tdd-workflow.md) for ordinary PR w
 The Agile package evolves with code on the same branch.
 Its explicit behavior changes supersede earlier TDD requirements for that behavior.
 Workflow documents and historical Harness TDDs do not impose task/run bookkeeping on ordinary development.
-Ask the operator for changes to the promised outcome; review ordinary package corrections in the PR.
+The package defines binding outcomes and constraints; the implementing agent owns discovery and contract-preserving adaptation.
+Use the workflow's [discovery rules](docs/agent/implement-tdd-workflow.md#understand-and-adapt) to distinguish a changed requirement from a corrected implementation proposal.
 
 Run focused checks directly.
 An authorized deterministic runner can execute long checks and notify the existing conversation on completion.

@@ -13,11 +13,18 @@ def test_public_candidate_wiki_command_dispatches_without_domain_ids(
 ) -> None:
     received: dict[str, object] = {}
 
-    def fake_build(*, config_path: Path | None, filename: str, candidate: bool) -> int:
+    def fake_build(
+        *,
+        config_path: Path | None,
+        filename: str,
+        candidate: bool,
+        ingestion_run_id: str | None,
+    ) -> int:
         received.update(
             config_path=config_path,
             filename=filename,
             candidate=candidate,
+            ingestion_run_id=ingestion_run_id,
         )
         return 0
 
@@ -39,6 +46,49 @@ def test_public_candidate_wiki_command_dispatches_without_domain_ids(
         "config_path": Path("/tmp/kotekomi.toml"),
         "filename": "report.pdf",
         "candidate": True,
+        "ingestion_run_id": None,
+    }
+
+
+def test_public_candidate_wiki_command_dispatches_explicit_ingestion_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+
+    def fake_build(
+        *,
+        config_path: Path | None,
+        filename: str,
+        candidate: bool,
+        ingestion_run_id: str | None,
+    ) -> int:
+        received.update(
+            config_path=config_path,
+            filename=filename,
+            candidate=candidate,
+            ingestion_run_id=ingestion_run_id,
+        )
+        return 0
+
+    monkeypatch.setattr(cli, "build_candidate_wiki", fake_build)
+
+    result = cli.main(
+        [
+            "wiki",
+            "build",
+            "report.pdf",
+            "--candidate",
+            "--ingestion-run",
+            "igr_older",
+        ]
+    )
+
+    assert result == 0
+    assert received == {
+        "config_path": None,
+        "filename": "report.pdf",
+        "candidate": True,
+        "ingestion_run_id": "igr_older",
     }
 
 

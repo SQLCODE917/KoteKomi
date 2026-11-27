@@ -20,15 +20,16 @@ Evidence that a Source asserts a statement does not establish that the statement
 
 ## Plan an Agile Package
 
-For work that spans responsibilities or uncertain contracts, refine the plan before pinning the implementation TDD. Keep the plan and its evidence in the existing Agile package and linked TDDs.
-
-1. **Investigate.** Trace the operator action through the current code and retained evidence. Pin the observed failure and a known-good case. Separate observations from suspected causes. Name the question that can change the next decision; time-box a spike only when evidence cannot otherwise answer it.
-2. **Split.** Map the whole operator journey, then choose the smallest useful end-to-end increment. Split its work by Domain behavior or verifiable deliverable, not by technical layer. For each subtask, name the outcome, prerequisite, and independent check. A subtask does not need its own PR. Keep later increments at the outcome and dependency level until they are next.
-3. **Check each subtask against the code.** Trace real callers, the responsible component, contract inputs and outputs, available fixtures, and failure paths. Record only what changes the plan: the finding, evidence, and decision or remaining question. Leave local implementation choices to the implementer.
-4. **Synthesize.** Walk the examples through the whole planned operator journey. Check that each contract has one owner, each requirement has a check, and the subtasks agree on inputs, outputs, and failure behavior. For cross-boundary work, have a separate reviewer challenge the joined plan. Resolve material gaps before pinning the TDD.
-5. **Revisit after delivery.** Record what changed, what evidence supports it, and what remains open. Use the work-selection and iteration rules below to continue, narrow, reorder, or stop. A completed subtask does not establish the complete operator result.
-
-Keep this proportional to the decision. A routine correction can use a short note and a regression; do not add a separate document, approval, or mandatory ceremony for each step.
+Trace the operator journey using [Understand and adapt](implement-tdd-workflow.md#understand-and-adapt).
+Separate observed behavior from suspected causes; record only findings that change a decision or expose a consequential unknown.
+Select the smallest useful end-to-end increment, including the caller changes needed to keep it working.
+Keep only the active TDD detailed; later increments remain tentative outcomes until implementation evidence informs the next choice.
+Use [Writing TDDs](writing-tdds.md) to distinguish binding contracts from proposals and sufficient evidence from repeated checks.
+Challenge a cross-boundary assumption with a focused probe or reviewer when it remains consequential and unresolved.
+A separate planning review is not a prerequisite for every cross-boundary change.
+After delivery, revise the existing package's current direction and resolve changed product decisions with the operator before detailing the next slice.
+A completed subtask does not establish the complete operator result.
+Keep this reasoning in the package and TDD; no additional plan, approval sequence, or evidence inventory is required.
 
 ## Choose and Deliver Work
 
@@ -81,7 +82,8 @@ Finite case evidence does not establish general extraction reliability.
 
 ## Verification and Measurement Scale
 
-Use the cheapest existing evidence that can reject or establish the intended claim.
+Choose evidence that can reliably distinguish the promised result from a plausible incorrect result.
+Use the narrowest sufficient boundary; cost alone does not justify weaker proof.
 Reuse captured source inputs and parses for deterministic selection and composition changes.
 Verify that a capture passes the production boundary validators before relying on it.
 Run fresh ingestion when the changed boundary or acceptance claim requires fresh execution.
@@ -107,7 +109,8 @@ A production cycle tests one user-visible improvement hypothesis through impleme
 It is not an individual edit, test run, or debugging step.
 Capability packages default to at most two production cycles unless their approved scope specifies another limit.
 Each cycle permits one bounded diagnostic experiment, one implementation approach, and one corrective attempt against its target cases.
-Ordinary debugging to satisfy the selected contract remains authorized within that approach.
+These limits govern capability experiments, not the number of edits or review revisions needed to satisfy a selected contract.
+Ordinary debugging and contract-preserving adaptation follow [Implementing a TDD](implement-tdd-workflow.md#understand-and-adapt).
 Focused regression and cause-isolation checks are verification, not separate production experiments.
 Repeated probes that seek a new improvement hypothesis consume the diagnostic budget regardless of their label.
 Renaming an experiment, repairing tests, or refining a report does not reset a consumed cycle.

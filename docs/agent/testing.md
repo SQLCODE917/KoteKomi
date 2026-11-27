@@ -20,6 +20,26 @@ Negative fixture tests must assert the exact failure.
 
 Port contract tests use Application Layer fake Ports and Adapter tests for the same contract.
 
+## Evidence at the changed boundary
+
+Choose the narrowest responsibility boundary that proves the changed contract.
+When a change connects components, prove that connection through its real caller and receiving component.
+Keep separate responsibilities in complementary tests; use an assembled test when their interaction is the claimed behavior.
+Substitute external responses at existing Ports or tool boundaries without replacing the connection being claimed.
+Assert observable meaning, state, and effects rather than private decomposition or incidental ordering.
+An unchanged function can still be affected by changed imports, initialization, shared state, or cleanup ownership.
+
+Ask: what plausible incorrect implementation could pass this test while violating its acceptance claim?
+Strengthen the proof only when that counterexample defeats the claim.
+An unrelated timeout must not satisfy a provider-failure assertion, and a fresh export must not stand in for rebuilding existing output.
+Inspect which path and failure the assertion reaches; use a focused negative control when reading leaves that uncertain.
+This reasoning belongs beside the existing criterion or test, not in another report or mandatory mutation framework.
+
+Reuse existing regressions for preserved behavior and independently established expected values.
+Stop adding tests when the changed contracts have discriminating evidence and affected regressions pass.
+Broaden or repeat checks only for subsequent changes, failures, or a concrete uncovered risk; required final checks still apply.
+Passing a narrow test establishes its boundary claim, not an unexecuted operator journey.
+
 ## Domain Core Tests
 
 Domain Core tests use data-in/data-out assertions.
