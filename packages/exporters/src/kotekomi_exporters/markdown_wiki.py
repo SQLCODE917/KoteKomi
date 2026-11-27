@@ -326,14 +326,21 @@ def _quote_lines(value: str, indent: str) -> list[str]:
     parts = value.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     lines: list[str] = []
     for index, part in enumerate(parts):
-        escaped = _escape_block_start(_markdown_text(part))
-        if escaped:
-            if index + 1 < len(parts) and parts[index + 1]:
-                escaped += "  "
-            lines.append(f"{indent}> {escaped}")
-        else:
+        if not part.strip():
             lines.append(f"{indent}>")
+            continue
+        escaped = _escape_block_start(_protect_leading_whitespace(part))
+        if index + 1 < len(parts) and parts[index + 1].strip():
+            escaped += "  "
+        lines.append(f"{indent}> {escaped}")
     return lines
+
+
+def _protect_leading_whitespace(value: str) -> str:
+    stripped = value.lstrip(" \t")
+    prefix = value[: len(value) - len(stripped)]
+    encoded = "".join("&#9;" if character == "\t" else "&#32;" for character in prefix)
+    return f"{encoded}{_markdown_text(stripped)}"
 
 
 def _escape_block_start(value: str) -> str:
