@@ -1,0 +1,39 @@
+schema_version = 2
+task_id = "preserve-literal-candidate-wiki-text-60f62cf3ddbe"
+title = "Preserve Literal Candidate Wiki Text"
+status = "ready_for_terra_high"
+series_id = "candidate-wiki-literal-text"
+task_class = "pure-behavior"
+model_profile = "terra-high-v1"
+baseline_revision = "9bf42494bca6d47a52fc91ec61543a9f7b36edb6"
+tdd_path = "docs/2026-11-27-preserve-candidate-wiki-literal-text.md"
+tdd_sha256 = "60f62cf3ddbec5e60d9122828ff0a5b9fa72883b22b247feea37060285595c6c"
+goal = "Preserve literal Source text and presentation labels in rendered Candidate Wiki pages."
+depends_on = []
+allowed_paths = ["packages/exporters/src/kotekomi_exporters/markdown_wiki.py", "packages/exporters/tests/test_markdown_candidate_wiki.py", "pyproject.toml", "uv.lock", "docs/CHECK_PLAN.md", "docs/2026-11-27-preserve-candidate-wiki-literal-text.md", "docs/2026-11-27-candidate-wiki-literal-text-agile-package.md", ".agent/tasks/preserve-literal-candidate-wiki-text-60f62cf3ddbe.toml"]
+reference_paths = ["docs/2026-09-05-ontology-driven-candidate-wiki-projection.md"]
+stop_conditions = ["The correction requires changing citation meaning, canonical IDs, link destinations, or public DTOs"]
+[readiness]
+authority = "Pinned TDD"
+contract_family = "candidate-wiki-text"
+dominant_outcome = "Visible literal Source punctuation"
+failure_policy = "Retain a failing regression and report a concrete blocker"
+legacy_disposition = "Existing page structure and newline behavior remain"
+negative_proof = "Input punctuation does not introduce formatting or links"
+public_entry_point = "MarkdownCandidateWikiRenderer.render"
+scope_policy = "Text presentation and verification only"
+side_effect_boundary = "Derived Markdown export"
+unresolved_decisions = []
+[budget]
+maximum_production_files = 1
+maximum_test_files = 1
+maximum_production_diff_lines = 100
+[[protected_artifacts]]
+kind = "leaf-tdd"
+path = "docs/2026-11-27-preserve-candidate-wiki-literal-text.md"
+sha256 = "60f62cf3ddbec5e60d9122828ff0a5b9fa72883b22b247feea37060285595c6c"
+[[acceptance]]
+id = "candidate-wiki-exporters"
+argv = ["uv","run","pytest","-p","no:cacheprovider","packages/exporters/tests"]
+timeout_seconds = 300
+profile = "portable-local"

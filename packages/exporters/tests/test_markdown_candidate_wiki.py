@@ -1,5 +1,7 @@
 import hashlib
+import html
 import json
+import re
 from dataclasses import replace
 
 from kotekomi_application.candidate_wiki import (
@@ -9,14 +11,17 @@ from kotekomi_application.candidate_wiki import (
     WikiAuditRecord,
     WikiAuditRecordType,
     WikiCitationRegistry,
+    WikiDetail,
     WikiEventPresentation,
     WikiEvidenceReference,
+    WikiLink,
     WikiOntologyEdge,
     WikiOntologyQualifier,
     WikiPageInput,
 )
 from kotekomi_domain.models import JsonValue
 from kotekomi_exporters import MarkdownCandidateWikiRenderer
+from markdown_it import MarkdownIt
 
 
 def test_renderer_is_deterministic_lean_and_exposes_stable_audit_handles() -> None:
@@ -103,6 +108,84 @@ def test_renderer_escapes_record_and_source_control_text() -> None:
     assert "**\\[unsafe\\]**" in markdown
     assert "<script>" not in markdown
     assert "> \\[source\\] \\| &lt;script&gt; next" in markdown
+
+
+def test_full_page_preserves_literal_markdown_control_text() -> None:
+    source = "The label is *literal* and `raw`."
+    controls = "**literal** _literal_ ~~literal~~ `raw`"
+    plan = _plan()
+    page = plan.pages[0]
+    event = page.presentations[0]
+    assertion = page.presentations[1]
+    assert isinstance(event, WikiEventPresentation)
+    assert isinstance(assertion, WikiAssertionPresentation)
+    event = replace(
+        event,
+        event_label=controls,
+        edges=tuple(
+            replace(
+                edge,
+                predicate=controls,
+                object_label=f"{controls} [click](https://evil.example)",
+            )
+            for edge in event.edges
+        ),
+    )
+    assertion = replace(
+        assertion,
+        edge=replace(
+            assertion.edge,
+            predicate=controls,
+            object_label=f"{controls} [click](https://evil.example)",
+        ),
+    )
+    page = replace(
+        page,
+        display_label=f"Actor {controls}",
+        details=(
+            WikiDetail(
+                label=controls,
+                value=f"{controls} [click](https://evil.example)",
+            ),
+        ),
+        links=(
+            WikiLink(
+                record_id="evt_related",
+                label=f"{controls} [click](https://evil.example)",
+                relative_path="events/Event.md",
+                state="pending",
+                record_type="Event",
+            ),
+        ),
+        presentations=(event, assertion),
+    )
+    evidence = tuple(replace(item, exact_text=source) for item in plan.citation_registry.citations)
+    plan = replace(
+        plan,
+        pages=(page,),
+        citation_registry=replace(plan.citation_registry, citations=evidence),
+    )
+
+    rendered = MarkdownCandidateWikiRenderer().render(plan)
+    markdown = next(
+        item.payload.decode() for item in rendered.files if item.relative_path == "actors/Amodei.md"
+    )
+    parsed = MarkdownIt("commonmark").enable("strikethrough").render(markdown)
+    visible = html.unescape(re.sub(r"<[^>]+>", "", parsed))
+
+    assert source in visible
+    assert controls in visible
+    assert "<em>literal</em>" not in parsed
+    assert "<strong>literal</strong>" not in parsed
+    assert "<code>raw</code>" not in parsed
+    assert "<del>literal</del>" not in parsed
+    assert '<a href="Donald_Trump.md">' in parsed
+    assert 'href="https://evil.example"' not in parsed
+    assert MarkdownCandidateWikiRenderer().render(plan) == rendered
+    citations = json.loads(
+        next(item.payload for item in rendered.files if item.relative_path == "citations.json")
+    )
+    assert citations["citations"][0]["exact_text"] == source
 
 
 def test_renderer_preserves_each_exact_source_grounded_event_label() -> None:
