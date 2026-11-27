@@ -107,7 +107,7 @@ def test_renderer_escapes_record_and_source_control_text() -> None:
     assert "used \\| &lt;script&gt;" in markdown
     assert "**\\[unsafe\\]**" in markdown
     assert "<script>" not in markdown
-    assert "> \\[source\\] \\| &lt;script&gt; next" in markdown
+    assert "    > \\[source\\] \\| &lt;script&gt;  \n    > next" in markdown
 
 
 def test_full_page_preserves_literal_markdown_control_text() -> None:
@@ -208,6 +208,48 @@ def test_renderer_preserves_each_exact_source_grounded_event_label() -> None:
         assert f"**{event_label}**" in markdown
         assert "**Extracted roles:**" in markdown
         assert "Ontology object graph" not in markdown
+
+
+def test_source_quotations_preserve_paragraphs_and_line_breaks() -> None:
+    source = (
+        "First paragraph.\n\n"
+        "Second paragraph:\n"
+        "- literal source item\n"
+        "# not heading\n"
+        "> not quote\n"
+        "``` not code"
+    )
+    plan = _plan()
+    evidence = tuple(replace(item, exact_text=source) for item in plan.citation_registry.citations)
+    plan = replace(
+        plan,
+        citation_registry=replace(plan.citation_registry, citations=evidence),
+    )
+
+    rendered = MarkdownCandidateWikiRenderer().render(plan)
+    markdown = next(
+        item.payload.decode() for item in rendered.files if item.relative_path == "actors/Amodei.md"
+    )
+    body = re.sub(r"\A---\n.*?\n---\n", "", markdown, flags=re.S)
+    parsed = MarkdownIt("commonmark").enable("strikethrough").render(body)
+    visible = html.unescape(re.sub(r"<[^>]+>", "", parsed))
+
+    assert visible.count("First paragraph.") == 2
+    assert visible.count("Second paragraph:") == 2
+    assert parsed.count("<p>First paragraph.</p>") == 2
+    assert parsed.count("Second paragraph:<br") == 2
+    assert visible.count("- literal source item") == 2
+    assert visible.count("# not heading") == 2
+    assert visible.count("> not quote") == 2
+    assert visible.count("``` not code") == 2
+    assert "<h1>not heading" not in parsed
+    assert "<li>literal source item" not in parsed
+    assert "<pre>" not in parsed
+    assert MarkdownCandidateWikiRenderer().render(plan) == rendered
+    citations = json.loads(
+        next(item.payload for item in rendered.files if item.relative_path == "citations.json")
+    )
+    assert citations["citations"][0]["exact_text"] == source
 
 
 def _plan() -> CandidateWikiPlan:
