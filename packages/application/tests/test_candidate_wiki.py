@@ -1,11 +1,12 @@
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import cast
 
 import pytest
 from kotekomi_application.candidate_wiki import (
     AuditCandidateWikiRecordCommand,
+    CandidateKnowledgeView,
     CandidateWikiAuditBundle,
     WikiAssertionPresentation,
     WikiBuildManifest,
@@ -238,6 +239,80 @@ def test_candidate_wiki_plan_links_index_document_and_record_pages() -> None:
         navigation = {detail.label: detail.relative_path for detail in page.details}
         assert navigation["Index"] == "index.md"
         assert navigation["Document"] == document_page.relative_path
+
+
+def test_candidate_wiki_plan_displays_ingestion_identity_and_completion() -> None:
+    started = datetime(2026, 9, 3, 22, tzinfo=UTC)
+    completed = datetime(2026, 9, 4, 2, tzinfo=timezone(timedelta(hours=2)))
+    plan = plan_candidate_wiki(_minimal_wiki_view(started, completed))
+
+    for page_kind in ("home", "document"):
+        page = next(item for item in plan.pages if item.page_kind == page_kind)
+        details = {detail.label: detail.value for detail in page.details}
+        assert details["Ingestion run"] == "igr_example"
+        assert details["Ingestion completed"] == "2026-09-04T00:00:00Z"
+
+    naive = plan_candidate_wiki(_minimal_wiki_view(datetime(2026, 9, 3, 22), datetime(2026, 9, 4)))
+    for page_kind in ("home", "document"):
+        page = next(item for item in naive.pages if item.page_kind == page_kind)
+        details = {detail.label: detail.value for detail in page.details}
+        assert details["Ingestion completed"] == "Unavailable"
+
+
+def _minimal_wiki_view(started_at: datetime, completed_at: datetime) -> CandidateKnowledgeView:
+    run = IngestionRun(
+        id="igr_example",
+        requested_path="/input/report.pdf",
+        display_filename="report.pdf",
+        requested_source_url="https://example.test/report",
+        normalized_source_url="https://example.test/report",
+        status=IngestionRunStatus.CAPTURED,
+        started_at=started_at,
+        completed_at=completed_at,
+        source_id="src_example",
+        document_id="doc_example",
+        representation_id="rep_example",
+        provenance_activity_id="prv_example",
+        analysis_run_id="arn_example",
+        ingestion_change_set_id="ics_example",
+    )
+    source = Source(
+        id="src_example",
+        source_type=SourceType.PDF,
+        identity_policy_id="test",
+        canonical_identity_key="https://example.test/report",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    document = Document(
+        id="doc_example",
+        source_id=source.id,
+        content_sha256="a" * 64,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    change_set = IngestionChangeSet(
+        id="ics_example",
+        ingestion_run_id=run.id,
+        analysis_run_id="arn_example",
+        representation_id="rep_example",
+        coverage_report_digest="c" * 64,
+        proposed_change_ids=(),
+        analysis_origin=IngestionChangeSetOrigin.EXECUTED,
+        closed_at=NOW,
+        change_set_digest="d" * 64,
+    )
+    return CandidateKnowledgeView(
+        view_policy_id="candidate_wiki_view_v1",
+        ingestion_run=run,
+        ingestion_change_set=change_set,
+        source=source,
+        document=document,
+        candidate_snapshot_digest="a" * 64,
+        records=(),
+        evidence_references=(),
+        excluded_proposal_counts=(),
+    )
 
 
 def test_candidate_view_fails_when_proposal_evidence_does_not_replay() -> None:

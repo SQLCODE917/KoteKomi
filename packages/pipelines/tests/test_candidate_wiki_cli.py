@@ -1,6 +1,8 @@
 """Public Wiki command behavior with real storage, selection, rendering and publication."""
 
+import html
 import json
+import re
 import sqlite3
 import subprocess
 import sys
@@ -8,6 +10,7 @@ from pathlib import Path
 
 import kotekomi_pipelines.cli as cli
 import pytest
+from markdown_it import MarkdownIt
 
 from packages.pipelines.tests.support.candidate_wiki_fixture import seed_wiki_example
 
@@ -36,6 +39,13 @@ def _active_run(root: Path) -> str:
     return str(json.loads(manifest.read_text())["ingestion_run_id"])
 
 
+def _visible_text(page: Path) -> str:
+    markdown = page.read_text()
+    body = re.sub(r"\A---\n.*?\n---\n", "", markdown, flags=re.S)
+    parsed = MarkdownIt("commonmark").render(body)
+    return html.unescape(re.sub(r"<[^>]+>", "", parsed))
+
+
 def _files(directory: Path) -> dict[str, bytes]:
     return {
         str(p.relative_to(directory)): p.read_bytes() for p in directory.rglob("*") if p.is_file()
@@ -62,6 +72,10 @@ def test_explicit_selection_publishes_the_selected_ingestion_and_preserves_state
     assert _active_run(tmp_path) == "igr_older"
     old_build = active.resolve()
     old_files = _files(old_build)
+    for page_path in ("index.md", "documents/report.pdf.md"):
+        visible = _visible_text(old_build / page_path)
+        assert "Ingestion run: igr_older" in visible
+        assert "Ingestion completed: 2026-11-26T00:00:00Z" in visible
 
     repeated = _build(config, "report.pdf", "--ingestion-run", "igr_older")
     assert repeated.returncode == 0, repeated.stderr
@@ -75,6 +89,10 @@ def test_explicit_selection_publishes_the_selected_ingestion_and_preserves_state
     assert active.resolve() != old_build
     assert len(tuple(builds.iterdir())) == 2
     assert _files(old_build) == old_files
+    for page_path in ("index.md", "documents/report.pdf.md"):
+        visible = _visible_text(active.resolve() / page_path)
+        assert "Ingestion run: igr_newer" in visible
+        assert "Ingestion completed: 2026-11-27T00:00:00Z" in visible
     current_build = active.resolve()
     published_files = _files(builds)
 
