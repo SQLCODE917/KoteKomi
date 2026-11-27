@@ -1,5 +1,9 @@
 # KoteKomi Check Plan
 
+Ordinary PR work runs focused tests while editing and `./scripts/verify.sh fast` before review.
+Full PR CI runs the complete suite; a second local full run or independent receipt is not required.
+Use the checks below when they exercise the changed behavior.
+
 Canonical full verification entry point: run `./scripts/verify.sh` from the
 repository root. This single script is what CI (`.github/workflows/ci.yml`)
 invokes, and it runs the complete gate — JSON Schema generation, the
@@ -194,7 +198,7 @@ An index download failure stops the job before installation or verification.
 - verify lifecycle evidence producers, Git/CI validation, canonical indexing, and workflow commit binding with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_lifecycle_evidence.py packages/devtools/tests/acceptance/test_lifecycle_evidence_producers_contract.py packages/devtools/tests/acceptance/test_tdd_workflow_contract.py`
 - verify independent candidate receipt topology, immutable retry commits, protected-oracle failures, and detached-worktree execution with `uv run pytest -p no:cacheprovider packages/devtools/tests/unit/test_candidate_verifier.py packages/devtools/tests/acceptance/test_independent_verifier_receipt_contract.py`
 - verify review-wake enrollment, marker routing, stale/closed/duplicate suppression, shared-account authorization, explicit Hub session binding, fresh pre-send comment/PR/head/pin revalidation, the maintained `websockets==16.1` subprotocol/accept boundary with non-propagating token-safe logging, transcript response session identity, pre-send history prefix evidence, historical/assistant/tool and mixed-content negative receipt controls, exact single-text-block wrapper grammar, changed/truncated history suppression, busy/unavailable queuing, nested `payload.requestId` run-start correlation, bounded 30-second receipt observation with delayed and inconsistent samples, exactly one new exact-alert user entry, one-send/restart suppression, and unknown/failed suppression without retry with `uv run pytest -p no:cacheprovider packages/devtools/tests/test_review_wake.py`; verify the declared dependency and lock consistency with `uv lock --check` and `uv run python -c 'import websockets; assert websockets.__version__ == "16.1"'`
-- run the generated Harness verification plan for changed `packages/devtools` paths and execute every returned check through `kotekomi-agent run-check`
+- for changed `packages/devtools` commands, run their focused unit and public CLI contract tests; verification-plan changes exercise selection and unknown-path regressions, and dispatch changes exercise delimiter/failure regressions
 
 ## 7. Documentation checks
 - verify replay source identity, explicit/semantic aliases, overlapping layers, Event-trigger proposal anchors, Textual worker lifecycle, resize/scroll behavior, immediate quit, shared CLI routing, injected output streams, latest/explicit IngestionRun selection across multiple coverage reports, and clean errors without older-run fallback with `uv run pytest packages/pipelines/tests/test_replay_reader.py packages/pipelines/tests/test_replay_tui.py packages/pipelines/tests/test_replay_live_cli.py`
