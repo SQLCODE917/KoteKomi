@@ -27,11 +27,16 @@ Use current [implementation guidance](agent/implement-tdd-workflow.md) for contr
 
 ## Evidence and completion
 
-Existing dispatch and selector tests remain useful but cannot alone establish which ingestion supplies the published Wiki.
+Selection is a pure operation over typed ingestion records; it does not read storage or construct Wiki content.
+The Pipeline supplies the records and retains I/O ownership.
+Selection tests use only those inputs.
+Public-command tests exercise real storage, view construction, rendering, and publication using [captured inputs owned by KoteKomi](../packages/pipelines/tests/fixtures/candidate_wiki/README.md).
+Their assertions cover selected identity, rejected selection, reuse, preserved output, and unchanged Ledger contents.
+The input fixture has no proposals or evidence records because their interpretation is outside selection and publication.
 Choose evidence at the changed connection that distinguishes the intended ingestion from a plausible wrong selection.
 Preserve independent expectations and existing tests for unchanged behavior; add only missing proof.
 Use focused checks while implementing, fast checks before candidate publication, and full PR CI as the full-suite merge gate.
-Retain a small reproducible CLI UAT example with disposable storage and expected results under `/private/tmp/kotekomi-explicit-ingestion-uat`.
+Use the same KoteKomi-owned fixture for reproducible CLI UAT in a fresh temporary directory.
 It must let the operator exercise the accepted behavior through the real public command without touching their existing Ledger or Archive.
 This fixture demonstrates selection and publication, not ingestion quality.
 Human UAT and merge close the package.

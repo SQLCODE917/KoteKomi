@@ -655,7 +655,7 @@ def _publish_candidate_wiki(
     archive = LocalArchiveStore(archive_path)
     archive.initialize()
     with sqlite_ledger_transaction(ledger_path) as ledger:
-        selection = select_candidate_ingestions(filename, ledger)
+        selection = select_candidate_ingestions(filename, ledger.list_ingestion_runs())
         run = selection.matches[0]
         plan = plan_candidate_wiki(build_candidate_knowledge_view(run, ledger))
     published = archive.publish_candidate_wiki(MarkdownCandidateWikiRenderer().render(plan))

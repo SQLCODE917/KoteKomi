@@ -7,7 +7,6 @@ import pytest
 from kotekomi_application.candidate_wiki import (
     AuditCandidateWikiRecordCommand,
     CandidateWikiAuditBundle,
-    CandidateWikiLedger,
     WikiAssertionPresentation,
     WikiBuildManifest,
     WikiEventPresentation,
@@ -15,8 +14,6 @@ from kotekomi_application.candidate_wiki import (
     build_candidate_knowledge_view,
     candidate_wiki_build_id,
     plan_candidate_wiki,
-    select_candidate_ingestion,
-    select_candidate_ingestions,
 )
 from kotekomi_domain import (
     Actor,
@@ -243,42 +240,6 @@ def test_candidate_wiki_plan_links_index_document_and_record_pages() -> None:
         assert navigation["Document"] == document_page.relative_path
 
 
-def test_explicit_candidate_ingestion_selector_uses_named_eligible_run() -> None:
-    ledger = FakeCandidateWikiLedger()
-    older = ledger.run.model_copy(
-        update={"id": "igr_older", "started_at": datetime(2026, 9, 3, tzinfo=UTC)}
-    )
-    newer = ledger.run.model_copy(
-        update={"id": "igr_newer", "started_at": datetime(2026, 9, 5, tzinfo=UTC)}
-    )
-    ineligible = ledger.run.model_copy(
-        update={"id": "igr_ineligible", "status": IngestionRunStatus.ERROR}
-    )
-    mismatched = ledger.run.model_copy(update={"id": "igr_other", "display_filename": "other.pdf"})
-    runs = cast(
-        CandidateWikiLedger,
-        _Runs((newer, older, ineligible, mismatched)),
-    )
-
-    selected = select_candidate_ingestion("report.pdf", "igr_older", runs)
-
-    assert selected.id == "igr_older"
-    with pytest.raises(ValueError, match="Unknown ingestion run"):
-        select_candidate_ingestion("report.pdf", "igr_missing", runs)
-    with pytest.raises(ValueError, match="does not match filename"):
-        select_candidate_ingestion("report.pdf", "igr_other", runs)
-    with pytest.raises(ValueError, match="not eligible"):
-        select_candidate_ingestion("report.pdf", "igr_ineligible", runs)
-
-
-class _Runs:
-    def __init__(self, runs: tuple[IngestionRun, ...]) -> None:
-        self._runs = runs
-
-    def list_ingestion_runs(self) -> tuple[IngestionRun, ...]:
-        return self._runs
-
-
 def test_candidate_view_fails_when_proposal_evidence_does_not_replay() -> None:
     ledger = FakeCandidateWikiLedger()
     proposal = ledger.proposals["pcg_org"]
@@ -340,18 +301,6 @@ def test_rejected_proposal_body_remains_part_of_candidate_snapshot() -> None:
 
     assert after.excluded_proposal_counts == before.excluded_proposal_counts
     assert after.candidate_snapshot_digest != before.candidate_snapshot_digest
-
-
-def test_exact_filename_selector_returns_all_closed_matches_newest_first() -> None:
-    ledger = FakeCandidateWikiLedger()
-    older = ledger.run.model_copy(
-        update={"id": "igr_older", "started_at": datetime(2026, 9, 3, tzinfo=UTC)}
-    )
-    ledger.list_ingestion_runs = lambda: (ledger.run, older)  # type: ignore[method-assign]
-
-    result = select_candidate_ingestions("report.pdf", ledger)
-
-    assert tuple(item.id for item in result.matches) == ("igr_example", "igr_older")
 
 
 def test_candidate_wiki_groups_an_event_without_requiring_its_classification() -> None:
