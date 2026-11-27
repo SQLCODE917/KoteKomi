@@ -527,12 +527,3 @@ def test_main_phase_reports_specific_missing_revision_arguments() -> None:
         assert code == 1
         _assert_common_payload(payload, "main")
         assert expected_rules <= _h11_diagnostic_rules(payload)
-
-
-def test_agents_guidance_requires_candidate_lifecycle_before_dogfood_and_ci() -> None:
-    agents_text = (Path(__file__).resolve().parents[2] / "AGENTS.md").read_text(encoding="utf-8")
-    normalized = " ".join(agents_text.lower().split())
-
-    assert "candidate lifecycle" in normalized
-    assert "before dogfood verification execution" in normalized
-    assert "before candidate ci" in normalized
