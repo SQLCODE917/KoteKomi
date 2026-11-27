@@ -39,7 +39,7 @@ from kotekomi_application.evidence_targets import verify_evidence_target
 from kotekomi_application.record_serialization import canonical_record_json
 
 CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v5"
-CANDIDATE_WIKI_RENDERER_POLICY_ID = "source_grounded_markdown_wiki_v8"
+CANDIDATE_WIKI_RENDERER_POLICY_ID = "source_grounded_markdown_wiki_v9"
 HASH_ID_LENGTH = 24
 
 type WikiIntelligenceRecord = (
@@ -685,6 +685,15 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
     all_links = tuple(
         _record_link(item, paths[item.record.id], evidence_numbers) for item in named_records
     )
+    document_path = f"documents/{_slug(view.ingestion_run.display_filename)}.md"
+    record_navigation = (
+        WikiDetail("Index", "Candidate Wiki", relative_path="index.md"),
+        WikiDetail(
+            "Document",
+            view.ingestion_run.display_filename,
+            relative_path=document_path,
+        ),
+    )
     pages.append(
         _page(
             relative_path="index.md",
@@ -693,7 +702,11 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             display_label="Candidate Wiki",
             state=None,
             details=(
-                WikiDetail("Document", view.ingestion_run.display_filename),
+                WikiDetail(
+                    "Document",
+                    view.ingestion_run.display_filename,
+                    relative_path=document_path,
+                ),
                 WikiDetail("Source", view.ingestion_run.normalized_source_url or "Unavailable"),
                 WikiDetail("Candidate records", str(len(view.records))),
             ),
@@ -703,7 +716,6 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             evidence_by_number=evidence_by_number,
         )
     )
-    document_path = f"documents/{_slug(view.ingestion_run.display_filename)}.md"
     pages.append(
         _page(
             relative_path=document_path,
@@ -712,6 +724,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
             display_label=view.ingestion_run.display_filename,
             state="accepted",
             details=(
+                WikiDetail("Index", "Candidate Wiki", relative_path="index.md"),
                 WikiDetail("Source URL", view.ingestion_run.normalized_source_url or "Unavailable"),
                 WikiDetail("Content SHA-256", view.document.content_sha256),
             ),
@@ -730,7 +743,7 @@ def plan_candidate_wiki(view: CandidateKnowledgeView) -> CandidateWikiPlan:
                 record_id=record_id,
                 display_label=_record_label(cast(WikiNamedRecord, item.record)),
                 state="pending" if item.is_pending else "accepted",
-                details=_record_details(item.record, by_id, paths),
+                details=(*_record_details(item.record, by_id, paths), *record_navigation),
                 links=(),
                 presentations=tuple(
                     presentation
