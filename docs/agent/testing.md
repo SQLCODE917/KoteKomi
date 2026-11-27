@@ -4,7 +4,19 @@
 
 Tests verify contracts and prevent boundary drift.
 
-Prefer data-in/data-out tests.
+Prefer data-in/data-out tests of one Domain meaning or observable boundary contract.
+Give a rule only the typed inputs it consumes; do not build an entire workflow to obtain one record.
+When a rule needs no I/O, keep it independent of repositories and test it without mocks.
+Use a behavioral fake only for an external Port the tested responsibility actually calls.
+Private helper names, keyword forwarding, object layout, and incidental call order are not behavioral contracts.
+
+Keep fixture dependencies within the tested responsibility.
+A selection test needs ingestion records, not Organizations, evidence proposals, or a rendered Wiki.
+An integration test can span components when their connection is the claim; isolate its storage setup from narrow tests.
+Use captured, validated boundary inputs when the upstream producer is outside that claim.
+Keep fixtures with their owning tests and share only for concrete consumers; never load a test module from another repository.
+A preserved behavior keeps its assertions through private refactoring.
+A changed input or persistence contract can require updating its owning fixture without rewriting unrelated test expectations.
 
 Use fixtures at real boundaries.
 

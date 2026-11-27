@@ -1,0 +1,211 @@
+{
+  "source": {
+    "id": "src_example",
+    "source_type": "pdf",
+    "identity_policy_id": "test",
+    "canonical_identity_key": "https://example.test/report",
+    "provider_namespace": null,
+    "provider_item_id": null,
+    "created_at": "2026-09-04T00:00:00Z",
+    "updated_at": "2026-09-04T00:00:00Z"
+  },
+  "document": {
+    "id": "doc_example",
+    "source_id": "src_example",
+    "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "provider_version": null,
+    "publication_time": null,
+    "provider_update_time": null,
+    "version_kind": "unknown",
+    "created_at": "2026-09-04T00:00:00Z",
+    "updated_at": "2026-09-04T00:00:00Z"
+  },
+  "raw_blob": {
+    "id": "blb_example",
+    "hash_algorithm": "sha256",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "byte_length": 0,
+    "media_type": "application/pdf",
+    "storage_locator": "fixture://report.pdf",
+    "created_at": "2026-11-27T00:00:00Z"
+  },
+  "fingerprint": {
+    "id": "ptf_example",
+    "task_kind": "document_representation",
+    "input_document_id": "doc_example",
+    "input_blob_id": "blb_example",
+    "input_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "processor_name": "test",
+    "processor_version": "1",
+    "processor_config_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "build_identity": {
+      "package_version": "0.1.0",
+      "source_revision": "fixture",
+      "artifact_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "representation_policy_version": "deposited-source-v1"
+    },
+    "build_identity_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "policy_id": "fixture",
+    "output_contract_version": "candidate_wiki_fixture",
+    "fingerprint_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "representation": {
+    "representation": {
+      "id": "rep_example",
+      "document_id": "doc_example",
+      "parser_name": "test",
+      "parser_version": "1",
+      "parser_config_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "processing_task_fingerprint_id": "ptf_example",
+      "input_blob_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "canonical_output_digest": "70b68764974fadf9c2ee91613f5128edf2872c5c9e1492c10f32956d6709c474",
+      "created_at": "2026-09-04T00:00:00Z"
+    },
+    "text_views": [
+      {
+        "id": "tvw_example",
+        "representation_id": "rep_example",
+        "kind": "logical",
+        "content_digest": "c634ed08683d42e5ff1377d236baff7d94a7fce3bc9c1972c2a934adc9135c79",
+        "text": "Acme hired Alice.",
+        "normalization_policy": "utf8_identity_v1"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "nod_root",
+        "representation_id": "rep_example",
+        "parent_node_id": null,
+        "node_type": "document",
+        "order_index": 0,
+        "structural_path": [],
+        "section_path": [],
+        "text_view_id": "tvw_example",
+        "start_char": 0,
+        "end_char": 17,
+        "source_region_ids": [],
+        "source_page_numbers": [],
+        "source_text_digest": null,
+        "parser_confidence": null,
+        "extraction_path": null
+      }
+    ],
+    "edges": [],
+    "source_regions": [],
+    "tables": [],
+    "table_fragments": [],
+    "table_rows": [],
+    "table_cells": [],
+    "table_annotations": [],
+    "references": [],
+    "source_selectors": [],
+    "quality_report": {
+      "id": "pqr_example",
+      "representation_id": "rep_example",
+      "metric_values": {},
+      "issues": [],
+      "analyzability": "acceptable"
+    }
+  },
+  "analysis_plan": {
+    "id": "anp_example",
+    "representation_id": "rep_example",
+    "plan_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "payload": {},
+    "created_at": "2026-11-27T00:00:00Z"
+  },
+  "provenance": {
+    "id": "prv_example",
+    "activity_type": "fixture_ingestion",
+    "agent": "uat_fixture",
+    "input_ids": [],
+    "output_ids": [],
+    "occurred_at": "2026-11-27T00:00:00Z"
+  },
+  "analyses": [
+    {
+      "id": "arn_older",
+      "document_id": "doc_example",
+      "representation_id": "rep_example",
+      "frozen_analysis_plan_id": "anp_example",
+      "coverage_policy_id": "fixture",
+      "state": "complete",
+      "started_at": "2026-11-26T00:00:00Z",
+      "completed_at": "2026-11-26T00:00:00Z"
+    },
+    {
+      "id": "arn_newer",
+      "document_id": "doc_example",
+      "representation_id": "rep_example",
+      "frozen_analysis_plan_id": "anp_example",
+      "coverage_policy_id": "fixture",
+      "state": "complete",
+      "started_at": "2026-11-27T00:00:00Z",
+      "completed_at": "2026-11-27T00:00:00Z"
+    }
+  ],
+  "change_sets": [
+    {
+      "id": "ics_3058f3ef520996751dd03c31",
+      "ingestion_run_id": "igr_older",
+      "analysis_run_id": "arn_older",
+      "representation_id": "rep_example",
+      "coverage_report_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "proposed_change_ids": [],
+      "analysis_origin": "executed",
+      "closed_at": "2026-11-27T00:00:00Z",
+      "change_set_digest": "3058f3ef520996751dd03c31abea54bf46e4bc97be026644f3531ec792063e1f"
+    },
+    {
+      "id": "ics_1833d3b588654dcace82a722",
+      "ingestion_run_id": "igr_newer",
+      "analysis_run_id": "arn_newer",
+      "representation_id": "rep_example",
+      "coverage_report_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "proposed_change_ids": [],
+      "analysis_origin": "executed",
+      "closed_at": "2026-11-27T00:00:00Z",
+      "change_set_digest": "1833d3b588654dcace82a722793687318385298dde87d9ef75656c0b557bd7a8"
+    }
+  ],
+  "ingestions": [
+    {
+      "id": "igr_older",
+      "requested_path": "/input/igr_older.pdf",
+      "display_filename": "report.pdf",
+      "requested_source_url": "https://example.test/report",
+      "normalized_source_url": "https://example.test/report",
+      "status": "captured",
+      "started_at": "2026-11-26T00:00:00Z",
+      "completed_at": "2026-11-26T00:00:00Z",
+      "source_id": "src_example",
+      "document_id": "doc_example",
+      "representation_id": "rep_example",
+      "provenance_activity_id": "prv_example",
+      "analysis_run_id": "arn_older",
+      "ingestion_change_set_id": "ics_3058f3ef520996751dd03c31",
+      "failure_stage": null,
+      "failure_code": null,
+      "safe_failure_message": null
+    },
+    {
+      "id": "igr_newer",
+      "requested_path": "/input/igr_newer.pdf",
+      "display_filename": "report.pdf",
+      "requested_source_url": "https://example.test/report",
+      "normalized_source_url": "https://example.test/report",
+      "status": "captured",
+      "started_at": "2026-11-27T00:00:00Z",
+      "completed_at": "2026-11-27T00:00:00Z",
+      "source_id": "src_example",
+      "document_id": "doc_example",
+      "representation_id": "rep_example",
+      "provenance_activity_id": "prv_example",
+      "analysis_run_id": "arn_newer",
+      "ingestion_change_set_id": "ics_1833d3b588654dcace82a722",
+      "failure_stage": null,
+      "failure_code": null,
+      "safe_failure_message": null
+    }
+  ]
+}

@@ -54,7 +54,6 @@ type WikiReferenceKind = Literal["evidence_target", "proposal_evidence"]
 
 
 class CandidateWikiLedger(Protocol):
-    def list_ingestion_runs(self) -> tuple[IngestionRun, ...]: ...
     def get_ingestion_change_set(self, record_id: str) -> IngestionChangeSet | None: ...
     def get_proposed_change(self, record_id: str) -> ProposedChange | None: ...
     def get_source(self, record_id: str) -> Source | None: ...
@@ -479,7 +478,7 @@ class CandidateWikiAuditArchive(Protocol):
 
 
 def select_candidate_ingestions(
-    filename: str, ledger: CandidateWikiLedger
+    filename: str, ingestions: tuple[IngestionRun, ...]
 ) -> CandidateIngestionSelection:
     """Return closed captured runs for one exact display filename, newest first."""
     _validate_candidate_filename(filename)
@@ -487,7 +486,7 @@ def select_candidate_ingestions(
         sorted(
             (
                 run
-                for run in ledger.list_ingestion_runs()
+                for run in ingestions
                 if run.display_filename == filename
                 and run.status is IngestionRunStatus.CAPTURED
                 and run.ingestion_change_set_id is not None
@@ -502,14 +501,14 @@ def select_candidate_ingestions(
 
 
 def select_candidate_ingestion(
-    filename: str, ingestion_run_id: str, ledger: CandidateWikiLedger
+    filename: str, ingestion_run_id: str, ingestions: tuple[IngestionRun, ...]
 ) -> IngestionRun:
     """Select one named eligible ingestion without interactive choice."""
     _validate_candidate_filename(filename)
     if not ingestion_run_id or ingestion_run_id.strip() != ingestion_run_id:
         raise ValueError("Candidate Wiki ingestion run ID must be one exact non-empty value.")
     run = next(
-        (item for item in ledger.list_ingestion_runs() if item.id == ingestion_run_id),
+        (item for item in ingestions if item.id == ingestion_run_id),
         None,
     )
     if run is None:

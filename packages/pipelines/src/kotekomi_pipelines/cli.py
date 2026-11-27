@@ -3203,9 +3203,11 @@ def build_candidate_wiki(
         archive.initialize()
         with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
             if ingestion_run_id is not None:
-                run = select_candidate_ingestion(filename, ingestion_run_id, repository)
+                run = select_candidate_ingestion(
+                    filename, ingestion_run_id, repository.list_ingestion_runs()
+                )
             else:
-                selection = select_candidate_ingestions(filename, repository)
+                selection = select_candidate_ingestions(filename, repository.list_ingestion_runs())
                 run = choose_candidate_ingestion(selection.matches)
             view = build_candidate_knowledge_view(run, repository)
             plan = plan_candidate_wiki(view)

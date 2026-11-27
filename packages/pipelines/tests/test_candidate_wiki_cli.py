@@ -1,95 +1,106 @@
-from datetime import UTC, datetime
+"""Public Wiki command behavior with real storage, selection, rendering and publication."""
+
+import json
+import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import kotekomi_pipelines.cli as cli
 import pytest
-from kotekomi_domain import IngestionRun, IngestionRunStatus
 
-NOW = datetime(2026, 9, 4, tzinfo=UTC)
+from packages.pipelines.tests.support.candidate_wiki_fixture import seed_wiki_example
 
 
-def test_public_candidate_wiki_command_dispatches_without_domain_ids(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    received: dict[str, object] = {}
-
-    def fake_build(
-        *,
-        config_path: Path | None,
-        filename: str,
-        candidate: bool,
-        ingestion_run_id: str | None,
-    ) -> int:
-        received.update(
-            config_path=config_path,
-            filename=filename,
-            candidate=candidate,
-            ingestion_run_id=ingestion_run_id,
-        )
-        return 0
-
-    monkeypatch.setattr(cli, "build_candidate_wiki", fake_build)
-
-    result = cli.main(
+def _build(config: Path, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         [
+            str(Path(sys.executable).with_name("kotekomi")),
             "--config",
-            "/tmp/kotekomi.toml",
+            str(config),
             "wiki",
             "build",
-            "report.pdf",
+            *arguments,
             "--candidate",
-        ]
+        ],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
     )
 
-    assert result == 0
-    assert received == {
-        "config_path": Path("/tmp/kotekomi.toml"),
-        "filename": "report.pdf",
-        "candidate": True,
-        "ingestion_run_id": None,
+
+def _active_run(root: Path) -> str:
+    manifest = root / "archive/review/wiki/manifest.json"
+    return str(json.loads(manifest.read_text())["ingestion_run_id"])
+
+
+def _files(directory: Path) -> dict[str, bytes]:
+    return {
+        str(p.relative_to(directory)): p.read_bytes() for p in directory.rglob("*") if p.is_file()
     }
 
 
-def test_public_candidate_wiki_command_dispatches_explicit_ingestion_run(
-    monkeypatch: pytest.MonkeyPatch,
+def _ledger_contents(root: Path) -> tuple[str, ...]:
+    with sqlite3.connect(root / "kotekomi.db") as connection:
+        return tuple(connection.iterdump())
+
+
+def test_explicit_selection_publishes_the_selected_ingestion_and_preserves_state(
+    tmp_path: Path,
 ) -> None:
-    received: dict[str, object] = {}
+    config = seed_wiki_example(tmp_path)
+    ledger_before = _ledger_contents(tmp_path)
+    active = tmp_path / "archive/review/wiki"
+    builds = tmp_path / "archive/review/wiki-builds"
 
-    def fake_build(
-        *,
-        config_path: Path | None,
-        filename: str,
-        candidate: bool,
-        ingestion_run_id: str | None,
-    ) -> int:
-        received.update(
-            config_path=config_path,
-            filename=filename,
-            candidate=candidate,
-            ingestion_run_id=ingestion_run_id,
-        )
-        return 0
+    older = _build(config, "report.pdf", "--ingestion-run", "igr_older")
+    assert older.returncode == 0, older.stderr
+    assert older.stdout.strip() == "review/wiki/"
+    assert "Select ingestion" not in older.stdout + older.stderr
+    assert _active_run(tmp_path) == "igr_older"
+    old_build = active.resolve()
+    old_files = _files(old_build)
 
-    monkeypatch.setattr(cli, "build_candidate_wiki", fake_build)
+    repeated = _build(config, "report.pdf", "--ingestion-run", "igr_older")
+    assert repeated.returncode == 0, repeated.stderr
+    assert active.resolve() == old_build
+    assert len(tuple(builds.iterdir())) == 1
+    assert _files(old_build) == old_files
 
-    result = cli.main(
-        [
-            "wiki",
-            "build",
-            "report.pdf",
-            "--candidate",
-            "--ingestion-run",
-            "igr_older",
-        ]
-    )
+    newer = _build(config, "report.pdf", "--ingestion-run", "igr_newer")
+    assert newer.returncode == 0, newer.stderr
+    assert _active_run(tmp_path) == "igr_newer"
+    assert active.resolve() != old_build
+    assert len(tuple(builds.iterdir())) == 2
+    assert _files(old_build) == old_files
+    current_build = active.resolve()
+    published_files = _files(builds)
 
-    assert result == 0
-    assert received == {
-        "config_path": None,
-        "filename": "report.pdf",
-        "candidate": True,
-        "ingestion_run_id": "igr_older",
-    }
+    for filename, run_id, error in (
+        ("report.pdf", "igr_missing", "Unknown ingestion run"),
+        ("report.pdf", "igr_unclosed", "not eligible"),
+        ("other.pdf", "igr_older", "does not match filename"),
+    ):
+        rejected = _build(config, filename, "--ingestion-run", run_id)
+        assert rejected.returncode == 1
+        assert error in rejected.stderr
+        assert active.resolve() == current_build
+        assert _files(builds) == published_files
+    assert _ledger_contents(tmp_path) == ledger_before
+
+
+@pytest.mark.parametrize("single_ingestion", [True, False])
+def test_filename_only_build_retains_single_and_interactive_selection(
+    tmp_path: Path,
+    single_ingestion: bool,
+) -> None:
+    config = seed_wiki_example(tmp_path, single_ingestion=single_ingestion)
+    # The interactive list is newest first; choose its older entry.
+    result = _build(config, "report.pdf", stdin="" if single_ingestion else "2\n")
+    assert result.returncode == 0, result.stderr
+    assert _active_run(tmp_path) == "igr_older"
 
 
 def test_public_candidate_wiki_audit_command_dispatches_with_stable_record_id(
@@ -136,38 +147,3 @@ def test_public_candidate_wiki_audit_command_dispatches_with_stable_record_id(
         "record_id": "evt_example",
         "output_format": "json",
     }
-
-
-def test_duplicate_ingestion_selector_uses_human_number_not_domain_id(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    newer = _run("igr_newer", NOW)
-    older = _run("igr_older", datetime(2026, 9, 3, tzinfo=UTC))
-
-    def select_second(_: str) -> str:
-        return "2"
-
-    monkeypatch.setattr("builtins.input", select_second)
-
-    selected = cli.choose_candidate_ingestion((newer, older))
-
-    assert selected.id == "igr_older"
-
-
-def _run(record_id: str, started_at: datetime) -> IngestionRun:
-    return IngestionRun(
-        id=record_id,
-        requested_path="/input/report.pdf",
-        display_filename="report.pdf",
-        requested_source_url="https://example.test/report",
-        normalized_source_url="https://example.test/report",
-        status=IngestionRunStatus.CAPTURED,
-        started_at=started_at,
-        completed_at=NOW,
-        source_id="src_example",
-        document_id="doc_example",
-        representation_id="rep_example",
-        provenance_activity_id="prv_example",
-        analysis_run_id="arn_example",
-        ingestion_change_set_id="ics_example",
-    )
