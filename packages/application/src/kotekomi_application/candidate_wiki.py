@@ -39,7 +39,7 @@ from kotekomi_application.evidence_targets import verify_evidence_target
 from kotekomi_application.record_serialization import canonical_record_json
 
 CANDIDATE_WIKI_VIEW_POLICY_ID = "candidate_wiki_view_v5"
-CANDIDATE_WIKI_RENDERER_POLICY_ID = "source_grounded_markdown_wiki_v8"
+CANDIDATE_WIKI_RENDERER_POLICY_ID = "source_grounded_markdown_wiki_v9"
 HASH_ID_LENGTH = 24
 
 type WikiIntelligenceRecord = (

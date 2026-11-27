@@ -436,7 +436,7 @@ def _plan() -> CandidateWikiPlan:
     )
     return CandidateWikiPlan(
         view_policy_id="candidate_wiki_view_v5",
-        renderer_policy_id="source_grounded_markdown_wiki_v8",
+        renderer_policy_id="source_grounded_markdown_wiki_v9",
         ingestion_run_id="igr_example",
         ingestion_change_set_id="ics_example",
         candidate_snapshot_digest="b" * 64,

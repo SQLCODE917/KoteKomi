@@ -20,12 +20,14 @@ This feature changes no Ledger records or ingestion behavior.
 - Links resolve to emitted files from each page's actual directory, including a filename requiring sanitization.
 - Existing record links, quotations, citation JSON, and canonical IDs retain their behavior.
 - Rendering the same input twice remains deterministic.
+- Existing generated Wikis remain publishable: advancing the renderer policy creates a new immutable build for the same view, activates it, reuses it on repetition, and preserves the prior build output.
 
 Keep navigation discoverable through the existing presentation; no new navigation framework or persistent schema is required.
 
 ## Verification and UAT
 
 Add a failing regression through the public planner and verify the emitted Markdown links with the existing parser.
+Add a focused publish regression that first publishes the previous renderer-policy output, then the navigation output for the same view, then repeats the new publish.
 Run focused planner/exporter tests during editing and fast checks for the candidate.
 Full PR CI supplies the full-suite merge gate.
 Generate a complete small Wiki in `/private/tmp/kotekomi-navigation-uat` for UAT.

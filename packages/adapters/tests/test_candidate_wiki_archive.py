@@ -42,6 +42,41 @@ def test_archive_publishes_immutable_build_and_atomically_updates_active_link(
     assert audit.audit_catalog.records == ()
 
 
+def test_archive_publishes_new_renderer_policy_for_the_same_view(
+    tmp_path: Path,
+) -> None:
+    from kotekomi_application.candidate_wiki import CANDIDATE_WIKI_RENDERER_POLICY_ID
+
+    previous_version = "source_grounded_markdown_wiki_v8"
+    previous = _rendered(
+        "previous output",
+        renderer_policy_id=previous_version,
+        snapshot_seed="same-view",
+    )
+    current = _rendered(
+        "navigation output",
+        renderer_policy_id=CANDIDATE_WIKI_RENDERER_POLICY_ID,
+        snapshot_seed="same-view",
+    )
+    archive = LocalArchiveStore(tmp_path / "archive")
+    archive.initialize()
+
+    created = archive.publish_candidate_wiki(previous)
+    activated = archive.publish_candidate_wiki(current)
+    reused = archive.publish_candidate_wiki(current)
+
+    active = tmp_path / "archive" / "review" / "wiki"
+    old_build = tmp_path / "archive" / "review" / "wiki-builds" / previous.manifest.build_id
+    assert created.disposition == "created"
+    assert activated.disposition == "created"
+    assert reused.disposition == "reused"
+    assert previous.manifest.build_id != current.manifest.build_id
+    assert active.resolve().name == current.manifest.build_id
+    assert (active / "index.md").read_text() == "navigation output\n"
+    assert old_build.is_dir()
+    assert (old_build / "index.md").read_text() == "previous output\n"
+
+
 def test_archive_rejects_changed_file_before_replacing_active_link(tmp_path: Path) -> None:
     archive = LocalArchiveStore(tmp_path / "archive")
     archive.initialize()
@@ -85,9 +120,14 @@ def test_archive_audit_trusts_only_manifested_files(tmp_path: Path) -> None:
         archive.read_candidate_wiki_audit_bundle(rendered.manifest.build_id)
 
 
-def _rendered(text: str) -> RenderedCandidateWiki:
+def _rendered(
+    text: str,
+    *,
+    renderer_policy_id: str = "deterministic_markdown_wiki_v1",
+    snapshot_seed: str | None = None,
+) -> RenderedCandidateWiki:
     index = f"{text}\n".encode()
-    snapshot_digest = hashlib.sha256(text.encode()).hexdigest()
+    snapshot_digest = hashlib.sha256((snapshot_seed or text).encode()).hexdigest()
     citations = canonical_wiki_citations_bytes(
         WikiCitationRegistry(candidate_snapshot_digest=snapshot_digest, citations=())
     )
@@ -108,7 +148,7 @@ def _rendered(text: str) -> RenderedCandidateWiki:
     )
     build_id = candidate_wiki_build_id(
         view_policy_id="candidate_wiki_view_v1",
-        renderer_policy_id="deterministic_markdown_wiki_v1",
+        renderer_policy_id=renderer_policy_id,
         ingestion_run_id="igr_example",
         ingestion_change_set_id="ics_example",
         candidate_snapshot_digest=snapshot_digest,
@@ -118,7 +158,7 @@ def _rendered(text: str) -> RenderedCandidateWiki:
         schema_version="candidate_wiki_manifest_v2",
         build_id=build_id,
         view_policy_id="candidate_wiki_view_v1",
-        renderer_policy_id="deterministic_markdown_wiki_v1",
+        renderer_policy_id=renderer_policy_id,
         ingestion_run_id="igr_example",
         ingestion_change_set_id="ics_example",
         candidate_snapshot_digest=snapshot_digest,
