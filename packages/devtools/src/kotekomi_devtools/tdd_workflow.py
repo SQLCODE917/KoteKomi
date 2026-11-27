@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -1035,22 +1036,22 @@ def _amend_implementation(root: Path, task: str, revision: str, reason: str, bin
         }:
             raise EvidenceError("amendment request differs from preserved history")
         pin = current / "git" / "specification-revision.json"
-        if (
-            not pending.exists()
-            and pin.exists()
-            and _read(pin)["specification_revision"] == revision
-        ):
-            return
         if not pending.exists():
-            # A crash after the archive rename but before the journal write is safe to resume.
-            if (
-                not pin.exists()
-                or _read(pin)["specification_revision"] != old["specification_revision"]
-            ):
-                raise EvidenceError("amendment history conflicts with current specification")
-    else:
-        if old["specification_revision"] == revision:
-            raise EvidenceError("amendment requires a new specification commit")
+            if pin.exists() and _read(pin)["specification_revision"] == revision:
+                return
+            raise EvidenceError(
+                "unjournaled amendment archive requires inspection; current evidence preserved"
+            )
+    elif old["specification_revision"] == revision:
+        raise EvidenceError("amendment requires a new specification commit")
+    status = _git("status", "--porcelain")
+    head = _git("rev-parse", "HEAD")
+    if status.returncode or head.returncode or head.stdout.strip() != revision or status.stdout:
+        raise EvidenceError("amendment requires clean HEAD at the selected specification commit")
+    # Publish intent before publishing an archive. An interrupted write cannot expose
+    # half a request; until replacement succeeds no run records have changed.
+    _write_amendment_intent(pending, request)
+    if not archive.exists():
         staging = archive.with_name(revision + ".staging")
         if staging.exists():
             shutil.rmtree(staging)
@@ -1062,11 +1063,19 @@ def _amend_implementation(root: Path, task: str, revision: str, reason: str, bin
             {**request, "previous_specification_revision": old["specification_revision"]},
         )
         staging.rename(archive)
-    if _git("rev-parse", "HEAD").stdout.strip() != revision or _git("status", "--porcelain").stdout:
-        raise EvidenceError("amendment requires clean HEAD at the selected specification commit")
-    _write(pending, request)
-    # All dependent records move out of active discovery; archived records remain immutable.
-    # The ordinary workflow below recreates spec/branch evidence for the same run.
+    else:
+        # Preserve every current record before resuming invalidation, including any
+        # evidence another explicit caller added during interruption. Never replace
+        # an earlier snapshot or assume it still covers the current directory.
+        ordinal = 1
+        while (archive / f"recovery-{ordinal:03d}").exists():
+            ordinal += 1
+        snapshot = archive / f"recovery-{ordinal:03d}"
+        staging = snapshot.with_suffix(".staging")
+        if staging.exists():
+            shutil.rmtree(staging)
+        shutil.copytree(current, staging)
+        staging.rename(snapshot)
     for path in current.iterdir():
         if path.name == "run.json":
             continue
@@ -1074,3 +1083,14 @@ def _amend_implementation(root: Path, task: str, revision: str, reason: str, bin
             shutil.rmtree(path)
         else:
             path.unlink()
+
+
+def _write_amendment_intent(path: Path, request: Json) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    with temporary.open("w") as stream:
+        json.dump(request, stream, sort_keys=True)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(path)

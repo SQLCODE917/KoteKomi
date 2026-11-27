@@ -237,3 +237,91 @@ def test_amendment_rejects_changed_protected_file_bytes(tmp_path: Path) -> None:
     code, result = _amend(repo, state, revision)
     assert code == 1, result
     assert "protected content" in result["diagnostics"][0]["rule"]
+
+
+def test_dirty_rejection_then_new_evidence_retry_preserves_every_record(tmp_path: Path) -> None:
+    repo, state, task, _, manifest, run = _start(tmp_path)
+    active = state / "experiments" / task / "runs" / run
+    manifest.write_text(
+        manifest.read_text().replace("maximum_production_files = 1", "maximum_production_files = 2")
+    )
+    revision = _commit(repo)
+    dirty = repo / "dirty.txt"
+    dirty.write_text("uncommitted")
+    code, _ = _amend(repo, state, revision)
+    assert code == 1
+    archive = state / "experiments" / task / "amendments" / run / revision
+    assert not archive.exists()
+    (active / "new-evidence.txt").write_text("evidence after rejected request")
+    dirty.unlink()
+    code, result = _amend(repo, state, revision)
+    assert code == 0, result
+    assert (archive / "run/new-evidence.txt").read_text() == "evidence after rejected request"
+
+
+@pytest.mark.parametrize("fault", ["archive_rename", "journal_replace"])
+def test_interrupted_amendment_publication_preserves_newer_evidence(
+    tmp_path: Path, fault: str
+) -> None:
+    repo, state, task, _, manifest, run = _start(tmp_path)
+    active = state / "experiments" / task / "runs" / run
+    manifest.write_text(
+        manifest.read_text().replace("maximum_production_files = 1", "maximum_production_files = 2")
+    )
+    revision = _commit(repo)
+    archive = state / "experiments" / task / "amendments" / run / revision
+    args = [
+        "implement-tdd",
+        "docs/leaf.md",
+        "--state-root",
+        str(state),
+        "--specification-commit",
+        revision,
+        "--amend-reason",
+        "The same task needs another implementation path",
+    ]
+    method = "rename" if fault == "archive_rename" else "replace"
+    script = f"""
+from pathlib import Path
+from unittest.mock import patch
+from kotekomi_devtools.cli import main
+original_rename, original_replace = Path.rename, Path.replace
+
+def rename(path, target):
+    result = original_rename(path, target)
+    if str(target) == {str(archive)!r}:
+        raise OSError("injected interruption after archive publication")
+    return result
+
+def replace(path, target):
+    if Path(target).name == "amendment-pending.json":
+        raise OSError("injected interruption before atomic journal replacement")
+    return original_replace(path, target)
+
+with patch.object(Path, {method!r}, {method}):
+    raise SystemExit(main({args!r}))
+"""
+    failed = subprocess.run(
+        ["uv", "run", "--project", str(PROJECT_ROOT), "python", "-c", script],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert failed.returncode == 1, failed.stdout + failed.stderr
+    assert "injected interruption" in failed.stdout
+    pending = state / "experiments" / task / "amendment-pending.json"
+    assert pending.exists() == (fault == "archive_rename")
+    assert archive.exists() == (fault == "archive_rename")
+    (active / "new-evidence.txt").write_text("evidence after interrupted request")
+    if pending.exists():
+        blocked = _cli(
+            repo, state, "implement-tdd", "docs/leaf.md", "--specification-commit", revision
+        )
+        assert blocked.returncode == 1
+        assert "amendment pending" in blocked.stdout
+    code, result = _amend(repo, state, revision)
+    assert code == 0, result
+    snapshot = archive / ("recovery-001" if fault == "archive_rename" else "run")
+    assert (snapshot / "new-evidence.txt").read_text() == "evidence after interrupted request"
+    assert not pending.exists()
