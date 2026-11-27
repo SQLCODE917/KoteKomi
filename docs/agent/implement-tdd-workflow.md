@@ -240,3 +240,32 @@ It does not create or push a new feature branch in this mode.
 Later implementation commits and pushes do not change the persisted specification record.
 
 The default command without `--specification-commit` retains the clean current-main path.
+
+## Same-task implementation amendments
+
+[Reduce Harness Coordination](../2026-11-27-reduce-harness-coordination.md) makes size budgets advisory.
+`budget-audit` preserves cumulative counts and `over_budget` diagnostics, but returns zero for size-only excess.
+Scope violations, invalid manifests, and protected-file changes still block the task.
+A high count is review information, not a reason to abandon and recreate a run.
+
+The planning authority can amend `allowed_paths` and `budget` for the same accepted behavior.
+Commit and push the amended manifest on the existing feature branch while its agents and checks are idle.
+Apply the amendment with one command:
+
+```text
+kotekomi-agent implement-tdd <tdd-path> --specification-commit <full-new-sha> --amend-reason "<reason>"
+```
+
+The command retains the existing task and run IDs.
+It archives previous run evidence under `experiments/<task>/amendments/<run>/<new-sha>/` in the state root.
+It invalidates current candidate, verification, CI, and promotion records and returns to the candidate phase.
+Run fresh verification before asking for review or acceptance.
+Repeating the same applied amendment preserves evidence produced afterward.
+If an amendment is pending after interruption, repeat that exact command before other workflow actions.
+The command resumes filesystem work without replaying checks.
+TDD, protected content, acceptance commands, baseline, and other manifest fields remain fixed.
+A changed behavior or oracle requires a separate specification decision.
+
+For authorized long checks, use the [job runner workflow](long-running-operations.md#authorized-job-runner).
+Report the generated candidate evidence once the job completes.
+The full receipt and promotion workflow remains the authority for project completion.

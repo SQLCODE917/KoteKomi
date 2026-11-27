@@ -321,6 +321,7 @@ def _handle_tdd_command(arguments: argparse.Namespace) -> CliResponse:
             new_run=arguments.new_run,
             abandon_run=arguments.abandon_run,
             specification_commit=arguments.specification_commit,
+            amend_reason=arguments.amend_reason,
         )
         return CliResponse(code, output)
     if arguments.command == "tdd-metrics":
@@ -761,6 +762,7 @@ def _build_parser() -> argparse.ArgumentParser:
     mode = implement.add_mutually_exclusive_group()
     mode.add_argument("--new-run", action="store_true")
     mode.add_argument("--abandon-run")
+    mode.add_argument("--amend-reason", metavar="TEXT")
     implement.add_argument("--state-root", type=Path, default=Path("~/.local/state/kotekomi"))
     implement.add_argument("--output", type=Path)
     implement.add_argument("--markdown", type=Path)

@@ -232,7 +232,7 @@ def test_revision_diff_over_production_lines(tmp_path: Path) -> None:
         _lines(11),
     )
     head = fixture.commit("large production file")
-    result = _payload(fixture.run_revision(head), exit_code=1)
+    result = _payload(fixture.run_revision(head), exit_code=0)
 
     assert result["status"] == "over_budget"
     assert result["totals"]["production_diff_lines"] == 11
@@ -259,7 +259,7 @@ def test_revision_diff_over_production_file_count(tmp_path: Path) -> None:
         "b\n",
     )
     head = fixture.commit("two production files")
-    result = _payload(fixture.run_revision(head), exit_code=1)
+    result = _payload(fixture.run_revision(head), exit_code=0)
 
     assert result["totals"]["production_files"] == 2
     assert result["diagnostics"] == [
@@ -285,7 +285,7 @@ def test_revision_diff_over_test_file_count(tmp_path: Path) -> None:
         "def test_b():\n    assert True\n",
     )
     head = fixture.commit("two test files")
-    result = _payload(fixture.run_revision(head), exit_code=1)
+    result = _payload(fixture.run_revision(head), exit_code=0)
 
     assert result["totals"]["test_files"] == 2
     assert result["diagnostics"] == [

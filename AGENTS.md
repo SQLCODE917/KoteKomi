@@ -45,6 +45,7 @@ For long-running local work, provide the human with:
 - the success criteria.
 
 The human starts and monitors the command.
+An explicitly authorized deterministic job runner can start and monitor it under [Long-Running Operations](docs/agent/long-running-operations.md#authorized-job-runner).
 
 Inspect its durable records after the human reports completion.
 

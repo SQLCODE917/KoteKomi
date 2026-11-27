@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import tomllib
 from datetime import UTC, datetime
@@ -398,6 +399,7 @@ def implement_tdd(
     new_run: bool = False,
     abandon_run: str | None = None,
     specification_commit: str | None = None,
+    amend_reason: str | None = None,
 ) -> tuple[int, Json]:
     root = state_root(state_root_path)
     if new_run and abandon_run:
@@ -426,6 +428,27 @@ def implement_tdd(
     binding = binding_result.binding or {}
     task = str(binding["task_id"])
     feature_branch: str | None = None
+    pending = root / "experiments" / task / "amendment-pending.json"
+    try:
+        if amend_reason is not None:
+            if new_run or abandon_run or not specification_commit or not amend_reason.strip():
+                raise EvidenceError(
+                    "amendment requires a reason, specification commit, and existing run"
+                )
+            _amend_implementation(root, task, specification_commit, amend_reason, binding)
+        elif pending.exists():
+            raise EvidenceError(
+                "amendment pending; resume the same amendment before other workflow actions"
+            )
+    except (EvidenceError, OSError, ValueError) as error:
+        return 1, {
+            "schema_version": 1,
+            "status": "blocked",
+            "task_id": task,
+            "diagnostics": [
+                {"code": "workflow.amendment_invalid", "location": "/amendment", "rule": str(error)}
+            ],
+        }
     try:
         run = _create_or_reload(root, task, new_run=new_run, abandon=abandon_run)
     except ValueError as error:
@@ -666,6 +689,8 @@ def implement_tdd(
             ],
         }
     phase, action, missing, diagnostics = workflow_status(root, entries, manifest.exists())
+    if amend_reason is not None and pending.exists() and not diagnostics:
+        pending.unlink()
     if action == "complete":
         mark_run_complete(root, task, run_id)
     if action == "superseded":
@@ -953,3 +978,99 @@ def _current_branch() -> str:
 
 def _git(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *arguments], text=True, capture_output=True, check=False)
+
+
+def _amend_implementation(root: Path, task: str, revision: str, reason: str, binding: Json) -> None:
+    """Apply an explicit manifest amendment; retain the prior run and reset current evidence."""
+    _, index = _runs(root, task)
+    selected = _latest(index)
+    if selected is None or selected["status"] not in {"active", "blocked"}:
+        raise EvidenceError("amendment requires an active or blocked run")
+    run_id = str(selected["implementation_run_id"])
+    current = run_root(root, task, run_id)
+    pending = root / "experiments" / task / "amendment-pending.json"
+    revision = _resolve_specification_commit(revision)
+    archive = root / "experiments" / task / "amendments" / run_id / revision
+    request: Json = {
+        "implementation_run_id": run_id,
+        "specification_revision": revision,
+        "reason": reason,
+    }
+    if pending.exists() and _read(pending) != request:
+        raise EvidenceError("a different amendment is pending")
+    prior = archive / "run" if archive.exists() else current
+    old = _read(prior / "git" / "specification-revision.json")
+    branch = _read(prior / "git" / "feature-branch.json")
+    if branch["branch"] != _current_branch() or _current_branch() == "main":
+        raise EvidenceError("amendment requires the existing feature branch")
+    manifest_path = f".agent/tasks/{task}.toml"
+    manifest_file = Path.cwd() / manifest_path
+    if not validate_task_manifest(manifest_file).valid:
+        raise EvidenceError("amended manifest is invalid")
+    old_bytes = _specification_bytes(str(old["specification_revision"]), manifest_path)
+    new_bytes = _specification_bytes(revision, manifest_path)
+    if manifest_file.read_bytes() != new_bytes:
+        raise EvidenceError("amended manifest differs from selected commit")
+    if hashlib.sha256(old_bytes).hexdigest() != old["manifest_sha256"]:
+        raise EvidenceError("previous manifest digest mismatch")
+    previous_manifest = tomllib.loads(old_bytes.decode())
+    manifest = tomllib.loads(new_bytes.decode())
+    allowed = {"allowed_paths", "budget"}
+    if {k: v for k, v in previous_manifest.items() if k not in allowed} != {
+        k: v for k, v in manifest.items() if k not in allowed
+    }:
+        raise EvidenceError("amendment permits only allowed_paths and budget changes")
+    if manifest["tdd_sha256"] != binding["tdd_sha256"]:
+        raise EvidenceError("amendment cannot change the bound TDD")
+    for artifact in manifest["protected_artifacts"]:
+        path = artifact["path"]
+        before = _specification_bytes(str(old["specification_revision"]), path)
+        after = _specification_bytes(revision, path)
+        if before != after or hashlib.sha256(after).hexdigest() != artifact["sha256"]:
+            raise EvidenceError("amendment cannot change protected content")
+    if archive.exists():
+        if _read(archive / "amendment.json") != {
+            **request,
+            "previous_specification_revision": old["specification_revision"],
+        }:
+            raise EvidenceError("amendment request differs from preserved history")
+        pin = current / "git" / "specification-revision.json"
+        if (
+            not pending.exists()
+            and pin.exists()
+            and _read(pin)["specification_revision"] == revision
+        ):
+            return
+        if not pending.exists():
+            # A crash after the archive rename but before the journal write is safe to resume.
+            if (
+                not pin.exists()
+                or _read(pin)["specification_revision"] != old["specification_revision"]
+            ):
+                raise EvidenceError("amendment history conflicts with current specification")
+    else:
+        if old["specification_revision"] == revision:
+            raise EvidenceError("amendment requires a new specification commit")
+        staging = archive.with_name(revision + ".staging")
+        if staging.exists():
+            shutil.rmtree(staging)
+        staging.mkdir(parents=True)
+        shutil.copytree(current, staging / "run")
+        (staging / "manifest.toml").write_bytes(old_bytes)
+        _write(
+            staging / "amendment.json",
+            {**request, "previous_specification_revision": old["specification_revision"]},
+        )
+        staging.rename(archive)
+    if _git("rev-parse", "HEAD").stdout.strip() != revision or _git("status", "--porcelain").stdout:
+        raise EvidenceError("amendment requires clean HEAD at the selected specification commit")
+    _write(pending, request)
+    # All dependent records move out of active discovery; archived records remain immutable.
+    # The ordinary workflow below recreates spec/branch evidence for the same run.
+    for path in current.iterdir():
+        if path.name == "run.json":
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()

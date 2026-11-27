@@ -69,7 +69,9 @@ class TaskBudgetResult:
 
     @property
     def exit_code(self) -> int:
-        return {"within_budget": 0, "over_budget": 1, "invalid": 2}[self.status]
+        if self.status == "invalid":
+            return 2
+        return int(any(d.code != "task_budget.budget_violation" for d in self.diagnostics))
 
     def as_json(self) -> JsonObject:
         return {
