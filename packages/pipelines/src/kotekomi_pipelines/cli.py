@@ -205,6 +205,7 @@ from kotekomi_application.candidate_wiki import (
     build_candidate_knowledge_view,
     candidate_wiki_record_audit_json,
     plan_candidate_wiki,
+    select_candidate_ingestion,
     select_candidate_ingestions,
 )
 from kotekomi_application.ingestion_inspection import (
@@ -330,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
             config_path=args.config,
             filename=args.filename,
             candidate=args.candidate,
+            ingestion_run_id=args.ingestion_run_id,
         )
 
     if args.command == "wiki" and args.wiki_command == "audit":
@@ -1027,6 +1029,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         required=True,
         help="Build from the selected ingestion's reviewable candidate state.",
+    )
+    wiki_build_parser.add_argument(
+        "--ingestion-run",
+        dest="ingestion_run_id",
+        default=None,
+        help="Build the named eligible ingestion instead of prompting.",
     )
     wiki_audit_parser = wiki_subparsers.add_parser(
         "audit", help="Show deterministic provenance for one Wiki graph record."
@@ -3173,7 +3181,13 @@ def list_user_ingestion_history(*, config_path: Path | None, limit: int, output_
     return 0
 
 
-def build_candidate_wiki(*, config_path: Path | None, filename: str, candidate: bool) -> int:
+def build_candidate_wiki(
+    *,
+    config_path: Path | None,
+    filename: str,
+    candidate: bool,
+    ingestion_run_id: str | None = None,
+) -> int:
     """Build and atomically publish one deterministic Candidate Wiki."""
     if not candidate:
         print("Candidate Wiki build requires --candidate.", file=sys.stderr)
@@ -3188,8 +3202,11 @@ def build_candidate_wiki(*, config_path: Path | None, filename: str, candidate: 
         archive = LocalArchiveStore(config.storage.archive_path)
         archive.initialize()
         with sqlite_ledger_transaction(config.storage.ledger_path) as repository:
-            selection = select_candidate_ingestions(filename, repository)
-            run = choose_candidate_ingestion(selection.matches)
+            if ingestion_run_id is not None:
+                run = select_candidate_ingestion(filename, ingestion_run_id, repository)
+            else:
+                selection = select_candidate_ingestions(filename, repository)
+                run = choose_candidate_ingestion(selection.matches)
             view = build_candidate_knowledge_view(run, repository)
             plan = plan_candidate_wiki(view)
         rendered = MarkdownCandidateWikiRenderer().render(plan)
